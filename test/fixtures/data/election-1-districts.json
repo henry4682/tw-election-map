@@ -26,7 +26,8 @@
           "party_name": "甲黨",
           "color": "#1b9431",
           "votes": 5000,
-          "is_elected": true
+          "is_elected": true,
+          "is_incumbent": true
         },
         {
           "candidacy_id": 202,
@@ -34,7 +35,8 @@
           "party_name": "乙黨",
           "color": "#000099",
           "votes": 3000,
-          "is_elected": false
+          "is_elected": false,
+          "is_incumbent": false
         }
       ],
       "geometry_hash": "9fb07522f6955b88afec78abf99b681c"
@@ -59,7 +61,8 @@
           "party_name": "乙黨",
           "color": "#000099",
           "votes": 2000,
-          "is_elected": true
+          "is_elected": true,
+          "is_incumbent": true
         }
       ],
       "geometry_hash": "6b441ea60576496bf219ed3591f8a983"

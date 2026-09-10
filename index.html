@@ -435,6 +435,7 @@
                                     <span class="swatch" :style="`background:${c.color}`"></span>
                                     <span x-text="c.label"></span>
                                     <span x-show="c.is_elected"> ✓當選</span>
+                                    <span x-show="c.is_incumbent"> ・現任</span>
                                     <strong x-text="c.votes.toLocaleString()"></strong> 票
                                     <span class="pct" x-text="`(${votePct(c, selectedDistrict)}%)`"></span>
                                 </li>

@@ -501,6 +501,29 @@ test.describe('copy image to clipboard (desktop share alternative)', () => {
     });
 });
 
+test.describe('incumbent/elected badges in district mode candidate list', () => {
+    test('shows ✓當選 for the winner and ・現任 only for candidates marked incumbent', async ({ page }) => {
+        await page.goto('/');
+        await page.locator('nav.mode-toggle button', { hasText: '議員/代表選區地圖' }).click();
+        await waitMapReady(page, 'district-map');
+
+        const view = page.locator('.view[x-show*="district"]');
+        await view.getByText('純鍵盤操作：選區清單').click();
+        await view.getByRole('button', { name: '甲縣第01選區' }).click();
+
+        const items = view.locator('.panel-heading ~ ul li');
+        await expect(items).toHaveCount(2);
+
+        // x-show 只切換 CSS display，不會把元素從 DOM 拿掉，textContent 為主的斷言
+        // （toContainText）看不出「有沒有顯示」，一律要用 toBeVisible()/toBeHidden()。
+        // fixture 裡第一位（甲黨 王小明）是當選+現任，第二位（乙黨 李小華）落選、非現任。
+        await expect(items.nth(0).getByText('✓當選')).toBeVisible();
+        await expect(items.nth(0).getByText('・現任')).toBeVisible();
+        await expect(items.nth(1).getByText('✓當選')).toBeHidden();
+        await expect(items.nth(1).getByText('・現任')).toBeHidden();
+    });
+});
+
 test.describe('narrow viewport layout (RWD-01)', () => {
     test('at 360px width, nav/map/election list/detail are all reachable with no page-level horizontal overflow', async ({ page }) => {
         await page.setViewportSize({ width: 360, height: 740 });
