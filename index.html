@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>台灣選舉地圖</title>
+    <!-- 用 emoji 當 favicon，避免額外的二進位資產檔案（跟這個專案「沒有 build 工具」的
+         極簡架構一致），順便消除瀏覽器預設索取 /favicon.ico 產生的 404（見 server log）。 -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🗳️</text></svg>">
+    <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css"
+        integrity="sha384-MinO0mNliZ3vwppuPOUnGa+iq619pfMhLVUXfC4LHwSCvF9H+6P/KO4Q7qBOYV5V" crossorigin="anonymous">
+    <link rel="stylesheet" href="css/style.css">
+    <script defer src="https://unpkg.com/alpinejs@3.17.2/dist/cdn.min.js"
+        integrity="sha384-lcaMFHdvRVsEXVuhit4fTnbxq6eTLm5HPdNzO7vXNZjr8HOCMouPmv4hSGF3PCJV" crossorigin="anonymous"></script>
+    <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"
+        integrity="sha384-SYKAG6cglRMN0RVvhNeBY0r3FYKNOJtznwA0v7B5Vp9tr31xAHsZC0DqkQ/pZDmj" crossorigin="anonymous"></script>
+</head>
+<body>
+    <div id="app" x-data>
+        <header>
+            <h1>台灣選舉地圖</h1>
+            <nav class="mode-toggle">
+                <button type="button" :class="{ active: $store.ui.mode === 'predict' }" :aria-pressed="String($store.ui.mode === 'predict')" @click="$store.ui.mode = 'predict'">互動預測地圖</button>
+                <button type="button" :class="{ active: $store.ui.mode === 'drilldown' }" :aria-pressed="String($store.ui.mode === 'drilldown')" @click="$store.ui.mode = 'drilldown'">歷屆選舉地圖</button>
+                <button type="button" :class="{ active: $store.ui.mode === 'district' }" :aria-pressed="String($store.ui.mode === 'district')" @click="$store.ui.mode = 'district'">議員/代表選區地圖</button>
+            </nav>
+        </header>
+
+        <div class="view" x-data="predictionMap()" x-show="$store.ui.mode === 'predict'">
+            <div class="status-banner" x-show="status === 'loading'" x-cloak role="status" aria-live="polite"><p>載入中…</p></div>
+            <div class="status-banner status-error" x-show="status === 'error'" x-cloak role="alert" aria-live="assertive">
+                <p x-text="errorMessage"></p>
+                <button type="button" @click="retryInit()">重試</button>
+            </div>
+            <div class="status-banner" x-show="status === 'empty'" x-cloak role="status" aria-live="polite"><p>目前沒有可顯示的選舉資料。</p></div>
+            <div class="status-banner status-warning" x-show="switchError" x-cloak role="status" aria-live="polite"><p x-text="switchError"></p></div>
+
+            <div class="toolbar predict-controls" x-show="status === 'ready'" x-cloak>
+                <label class="level-picker">
+                    選舉
+                    <select :value="selectedElectionId" @change="loadElection($event.target.value)">
+                        <template x-for="e in elections" :key="e.id">
+                            <option :value="e.id" x-text="electionLabel(e)"></option>
+                        </template>
+                    </select>
+                </label>
+                <label class="level-picker">
+                    <span x-text="levels[0]?.label"></span>
+                    <select :value="selectedRootId ?? ''" @change="setSelectedRoot($event.target.value)">
+                        <option value="">全國</option>
+                        <template x-for="r in regionTree" :key="r.region_id">
+                            <option :value="r.region_id" x-text="r.name"></option>
+                        </template>
+                    </select>
+                </label>
+                <label class="level-picker">
+                    顯示層級
+                    <select :value="displayLevelIndex" @change="setDisplayLevel($event.target.value)">
+                        <template x-for="(l, i) in levels" :key="i">
+                            <option :value="i" x-text="l.label"></option>
+                        </template>
+                    </select>
+                </label>
+                <label class="level-picker">
+                    填色層級
+                    <select :value="fillLevelIndex" @change="setFillLevel($event.target.value)">
+                        <template x-for="l in fillLevelOptions" :key="l.index">
+                            <option :value="l.index" x-text="l.label"></option>
+                        </template>
+                    </select>
+                </label>
+                <p class="hint" x-show="fillLevelIndex > displayLevelIndex" x-cloak>顯示的是<span x-text="levels[displayLevelIndex].label"></span>形狀，底色是底下<span x-text="fillLevelLabel"></span>猜測結果聚合出來的多數決；點一個<span x-text="levels[displayLevelIndex].label"></span>會鑽入看底下的<span x-text="fillLevelLabel"></span>猜測</p>
+            </div>
+
+            <div class="toolbar" x-show="drillPath.length" x-cloak>
+                <nav class="breadcrumb">
+                    <a href="#" @click.prevent="goToBreadcrumb(-1)">全國</a>
+                    <template x-for="(node, i) in drillBreadcrumb" :key="node.region_id">
+                        <span>
+                            <span> › </span>
+                            <a href="#" @click.prevent="goToBreadcrumb(i)" x-text="node.name" x-show="i < drillBreadcrumb.length - 1"></a>
+                            <strong x-text="node.name" x-show="i === drillBreadcrumb.length - 1"></strong>
+                        </span>
+                    </template>
+                </nav>
+            </div>
+
+            <div class="layout" x-show="status === 'ready'" x-cloak>
+                <div id="map" class="map-pane">
+                    <div class="tooltip" x-show="hoveredRegion" x-cloak :style="`left:${tooltipPos.x}px; top:${tooltipPos.y}px`">
+                        <strong x-text="hoveredRegion?.name"></strong>
+                        <template x-for="r in notableResults(hoveredRegion)" :key="r.candidacy_id">
+                            <div>
+                                <span class="tooltip-swatch" :style="`background:${candidateColor(r.candidacy_id)}`"></span>
+                                <span x-text="candidateLabel(r.candidacy_id)"></span>
+                                <strong x-text="r.votes.toLocaleString()"></strong> 票
+                                (<span x-text="votePct(r, hoveredRegion)"></span>%)
+                            </div>
+                        </template>
+                        <p class="hint" x-show="fillLevelIndex > currentDepth && hoveredRegion?.children?.length">點擊鑽入下一層</p>
+                        <p class="hint" x-show="! (fillLevelIndex > currentDepth && hoveredRegion?.children?.length) && selectedRegion?.region_id === hoveredRegion?.region_id">再點一次切換猜測候選人</p>
+                        <p class="hint" x-show="! (fillLevelIndex > currentDepth && hoveredRegion?.children?.length) && selectedRegion?.region_id !== hoveredRegion?.region_id">點擊查看明細</p>
+                    </div>
+                </div>
+
+                <aside class="sidebar-pane">
+                    <section>
+                        <h2>點<span x-text="fillLevelLabel"></span>切換預測候選人</h2>
+                        <button @click="resetToActual()">重設為實際結果</button>
+                        <button @click="undoLastEdit()" :disabled="! lastEdit">復原上一步</button>
+                        <button @click="exportImage()" :disabled="status !== 'ready'">下載圖片</button>
+                        <p class="hint">先點一下<span x-text="fillLevelLabel"></span>查看明細，已經選取時再點一次才會切換猜測候選人；顏色深淺代表該候選人的實際得票率，越深代表贏得越多</p>
+                        <p class="hint">下載圖片會附上選舉名稱、圖例，以及是否修改過預測的標示</p>
+                        <details class="keyboard-region-list">
+                            <summary>純鍵盤操作：<span x-text="fillLevelLabel"></span>清單（跟點地圖效果相同）</summary>
+                            <ul>
+                                <template x-for="r in currentRegions" :key="r.region_id">
+                                    <li>
+                                        <button
+                                            type="button"
+                                            :class="{ active: selectedRegion?.region_id === r.region_id }"
+                                            @click="selectRegionById(r.region_id)"
+                                            @focus="hoverRegionById(r.region_id)"
+                                            @blur="hoveredRegion = null"
+                                        >
+                                            <span class="swatch" :style="`background:${candidateColor(r.assigned_candidacy_id)}`"></span>
+                                            <span x-text="r.name"></span>
+                                            <span x-show="r.children?.length" aria-hidden="true"> ›</span>
+                                        </button>
+                                    </li>
+                                </template>
+                            </ul>
+                        </details>
+                    </section>
+
+                    <section>
+                        <h2>或指定政黨給選取的<span x-text="fillLevelLabel"></span></h2>
+                        <p class="hint" x-show="! selectedRegion" x-cloak>先點地圖選一個<span x-text="fillLevelLabel"></span>，才能在下面指定政黨（跟切換候選人是兩種獨立的塗色方式，以最後做的動作為準）</p>
+                        <ul class="legend" x-show="assignableParties.length" x-cloak>
+                            <template x-for="p in assignableParties" :key="p.party_name">
+                                <li>
+                                    <button
+                                        type="button"
+                                        class="party-pick"
+                                        :disabled="! selectedRegion"
+                                        @click="assignPartyToSelected(p)"
+                                    >
+                                        <span class="swatch" :style="`background:${p.color}`"></span>
+                                        <span x-text="p.party_name"></span>
+                                        <strong x-text="partyTally[p.party_name] ?? 0"></strong>
+                                        <span x-text="`個${fillLevelLabel}`"></span>
+                                    </button>
+                                </li>
+                            </template>
+                        </ul>
+
+                        <div class="add-party-form">
+                            <input type="text" placeholder="自訂政黨名稱" aria-label="自訂政黨名稱" x-model="newPartyLabel" maxlength="20" @keydown.enter="addCustomParty()">
+                            <input type="color" x-model="newPartyColor" title="自訂政黨顏色">
+                            <button type="button" @click="addCustomParty()">新增</button>
+                        </div>
+                        <ul class="legend" x-show="customParties.length" x-cloak>
+                            <template x-for="(p, i) in customParties" :key="p.party_name + i">
+                                <li>
+                                    <span class="swatch" :style="`background:${p.color}`"></span>
+                                    <span x-text="p.party_name"></span>
+                                    <button type="button" class="remove-party" @click="removeCustomParty(i)">移除</button>
+                                </li>
+                            </template>
+                        </ul>
+                        <p class="hint">自訂政黨存在瀏覽器（localStorage），只有這個瀏覽器看得到，重新整理不會消失</p>
+                    </section>
+
+                    <section x-show="selectedRegion" x-cloak>
+                        <div class="panel-heading">
+                            <h2 x-text="selectedRegion?.name"></h2>
+                            <button type="button" class="panel-close" @click="closeDetail()">關閉</button>
+                        </div>
+                        <svg viewBox="0 0 120 120" width="120" height="120" class="pie-chart" x-html="pieChartSvg(selectedRegion)"></svg>
+                        <ul>
+                            <template x-for="r in selectedRegion?.results ?? []" :key="r.candidacy_id">
+                                <li>
+                                    <span class="swatch" :style="`background:${candidateColor(r.candidacy_id)}`"></span>
+                                    <span x-text="candidateLabel(r.candidacy_id)"></span>
+                                    <strong x-text="r.votes.toLocaleString()"></strong> 票
+                                    <span class="pct" x-text="`(${votePct(r, selectedRegion)}%)`"></span>
+                                </li>
+                            </template>
+                        </ul>
+                    </section>
+                </aside>
+            </div>
+        </div>
+
+        <div class="view" x-data="drillDownMap()" x-show="$store.ui.mode === 'drilldown'" x-cloak>
+            <div class="toolbar" x-show="path.length" x-cloak>
+                <nav class="breadcrumb">
+                    <a href="#" @click.prevent="goToBreadcrumb(-1)">頂層</a>
+                    <template x-for="(node, i) in breadcrumb" :key="node.region_id">
+                        <span>
+                            <span> › </span>
+                            <a href="#" @click.prevent="goToBreadcrumb(i)" x-text="node.name" x-show="i < breadcrumb.length - 1"></a>
+                            <strong x-text="node.name" x-show="i === breadcrumb.length - 1"></strong>
+                        </span>
+                    </template>
+                </nav>
+            </div>
+
+            <div class="layout">
+                <aside class="election-sidebar" :class="{ 'is-collapsed': ! mobileNavOpen }">
+                    <div class="election-sidebar-header">
+                        <div>
+                            <label class="theme-toggle">
+                                <span x-text="$store.ui.theme === 'light' ? '淺色' : '深色'"></span>
+                                <span class="theme-switch">
+                                    <input type="checkbox" :checked="$store.ui.theme === 'light'" @change="$store.ui.toggleTheme()">
+                                    <span class="theme-switch-track"></span>
+                                </span>
+                            </label>
+                            <div class="eyebrow">歷屆選舉</div>
+                            <p class="election-sidebar-count mono" x-show="status === 'ready'" x-cloak x-text="`${elections.length} 場選舉`"></p>
+                            <p class="election-sidebar-count" x-show="status === 'loading'">載入中...</p>
+                            <p class="election-sidebar-count" x-show="status === 'empty'">目前沒有可顯示的選舉資料</p>
+                        </div>
+                        <button
+                            type="button"
+                            class="sidebar-toggle"
+                            @click="mobileNavOpen = ! mobileNavOpen"
+                            :aria-expanded="String(mobileNavOpen)"
+                            aria-label="展開或收合選舉清單"
+                        ><span x-text="mobileNavOpen ? '▴' : '▾'"></span></button>
+                    </div>
+                    <div class="status-banner status-error" x-show="status === 'error'" x-cloak role="alert" aria-live="assertive">
+                        <p x-text="errorMessage"></p>
+                        <button type="button" @click="retryInit()">重試</button>
+                    </div>
+                    <div class="status-banner status-warning" x-show="switchError" x-cloak role="status" aria-live="polite"><p x-text="switchError"></p></div>
+                    <div class="election-list">
+                        <template x-for="e in elections" :key="e.id">
+                            <button
+                                type="button"
+                                class="election-item"
+                                :class="{ active: e.id === selectedElectionId }"
+                                @click="loadElection(e.id); mobileNavOpen = false"
+                            >
+                                <span class="election-year mono" x-text="e.date.slice(0, 4)"></span>
+                                <span class="election-name" x-text="e.name"></span>
+                            </button>
+                        </template>
+                    </div>
+                </aside>
+
+                <div id="drilldown-map" class="map-pane">
+                    <div class="tooltip" x-show="hoveredRegion" x-cloak :style="`left:${tooltipPos.x}px; top:${tooltipPos.y}px`">
+                        <strong x-text="hoveredRegion?.name"></strong>
+                        <template x-for="r in notableResults(hoveredRegion)" :key="r.candidacy_id">
+                            <div>
+                                <span class="tooltip-swatch" :style="`background:${candidateColor(r.candidacy_id, regionCandidatesFor(hoveredRegion))}`"></span>
+                                <span x-text="candidateLabel(r.candidacy_id, regionCandidatesFor(hoveredRegion))"></span>
+                                <strong x-text="r.votes.toLocaleString()"></strong>
+                                <span x-text="regionAggregateRemaining() > 0 ? '席' : '票'"></span>
+                                (<span x-text="votePct(r, hoveredRegion)"></span>%)
+                            </div>
+                        </template>
+                        <p class="hint" x-show="hoveredRegion?.children?.length">點擊鑽入下一層</p>
+                        <p class="hint" x-show="regionAggregateRemaining() > 0">這個層級不是同一場選舉，顏色/數字是底下各政黨贏的單位數多數決，不是真實得票</p>
+                    </div>
+                </div>
+
+                <aside class="sidebar-pane">
+                    <section>
+                        <h2 x-text="election?.name"></h2>
+                        <p class="hint">點行政區鑽入下一層；鑽到最細層級後點擊會顯示完整得票明細</p>
+                        <details class="keyboard-region-list">
+                            <summary>純鍵盤操作：行政區清單（跟點地圖效果相同）</summary>
+                            <ul>
+                                <template x-for="r in currentRegions" :key="r.region_id">
+                                    <li>
+                                        <button
+                                            type="button"
+                                            :class="{ active: selectedRegion?.region_id === r.region_id }"
+                                            @click="selectRegionById(r.region_id)"
+                                            @focus="hoverRegionById(r.region_id)"
+                                            @blur="hoveredRegion = null"
+                                        >
+                                            <span class="swatch" :style="`background:${candidateColor(r.actual_winner_candidacy_id, regionCandidatesFor(r))}`"></span>
+                                            <span x-text="r.name"></span>
+                                            <span x-show="r.children?.length" aria-hidden="true"> ›</span>
+                                        </button>
+                                    </li>
+                                </template>
+                            </ul>
+                        </details>
+                    </section>
+
+                    <section x-show="selectedRegion" x-cloak>
+                        <div class="panel-heading">
+                            <h2 x-text="selectedRegion?.name"></h2>
+                            <button type="button" class="panel-close" @click="closeDetail()">關閉</button>
+                        </div>
+                        <svg viewBox="0 0 120 120" width="120" height="120" class="pie-chart" x-html="pieChartSvg(selectedRegion)"></svg>
+                        <ul>
+                            <template x-for="r in regionResultsFor(selectedRegion)" :key="r.candidacy_id">
+                                <li>
+                                    <span class="swatch" :style="`background:${candidateColor(r.candidacy_id, regionCandidatesFor(selectedRegion))}`"></span>
+                                    <span x-text="candidateLabel(r.candidacy_id, regionCandidatesFor(selectedRegion))"></span>
+                                    <strong x-text="r.votes.toLocaleString()"></strong> 票
+                                    <span class="pct" x-text="`(${votePct(r, selectedRegion)}%)`"></span>
+                                </li>
+                            </template>
+                        </ul>
+                    </section>
+                </aside>
+            </div>
+        </div>
+
+        <div class="view" x-data="districtMap()" x-show="$store.ui.mode === 'district'" x-cloak>
+            <div class="layout">
+                <aside class="election-sidebar" :class="{ 'is-collapsed': ! mobileNavOpen }">
+                    <div class="election-sidebar-header">
+                        <div>
+                            <label class="theme-toggle">
+                                <span x-text="$store.ui.theme === 'light' ? '淺色' : '深色'"></span>
+                                <span class="theme-switch">
+                                    <input type="checkbox" :checked="$store.ui.theme === 'light'" @change="$store.ui.toggleTheme()">
+                                    <span class="theme-switch-track"></span>
+                                </span>
+                            </label>
+                            <div class="eyebrow">歷屆選舉</div>
+                            <p class="election-sidebar-count mono" x-show="status === 'ready'" x-cloak x-text="`${elections.length} 場選舉`"></p>
+                            <p class="election-sidebar-count" x-show="status === 'loading'">載入中...</p>
+                            <p class="election-sidebar-count" x-show="status === 'empty'">目前沒有可顯示的選舉資料</p>
+                        </div>
+                        <button
+                            type="button"
+                            class="sidebar-toggle"
+                            @click="mobileNavOpen = ! mobileNavOpen"
+                            :aria-expanded="String(mobileNavOpen)"
+                            aria-label="展開或收合選舉清單"
+                        ><span x-text="mobileNavOpen ? '▴' : '▾'"></span></button>
+                    </div>
+                    <div class="status-banner status-error" x-show="status === 'error'" x-cloak role="alert" aria-live="assertive">
+                        <p x-text="errorMessage"></p>
+                        <button type="button" @click="retryInit()">重試</button>
+                    </div>
+                    <div class="status-banner status-warning" x-show="switchError" x-cloak role="status" aria-live="polite"><p x-text="switchError"></p></div>
+                    <div class="election-list">
+                        <template x-for="e in elections" :key="e.id">
+                            <button
+                                type="button"
+                                class="election-item"
+                                :class="{ active: e.id === selectedElectionId }"
+                                @click="loadElection(e.id); mobileNavOpen = false"
+                            >
+                                <span class="election-year mono" x-text="e.date.slice(0, 4)"></span>
+                                <span class="election-name" x-text="e.name"></span>
+                            </button>
+                        </template>
+                    </div>
+                </aside>
+
+                <div id="district-map" class="map-pane">
+                    <div class="tooltip" x-show="hoveredDistrict" x-cloak :style="`left:${tooltipPos.x}px; top:${tooltipPos.y}px`">
+                        <strong x-text="hoveredDistrict?.name"></strong>
+                        <div>
+                            <span class="tooltip-swatch" :style="`background:${hoveredDistrict?.color}`"></span>
+                            <span x-text="hoveredDistrict?.leading_party_name ?? '其他'"></span>
+                            <strong x-text="hoveredDistrict?.party_seats?.[0]?.seats"></strong> /
+                            <span x-text="hoveredDistrict?.total_seats"></span> 席
+                        </div>
+                    </div>
+                </div>
+
+                <aside class="sidebar-pane">
+                    <section>
+                        <h2>全國政黨當選席次</h2>
+                        <ul class="legend">
+                            <template x-for="p in partyTotals" :key="p.party_name">
+                                <li>
+                                    <span class="swatch" :style="`background:${p.color}`"></span>
+                                    <span x-text="p.party_name"></span>
+                                    <strong x-text="p.seats"></strong> 席
+                                </li>
+                            </template>
+                        </ul>
+                        <p class="hint">顏色代表該選區當選席次最多的政黨，深淺代表該政黨在該選區的席次佔比；點選區看候選人得票+政黨席次明細</p>
+                        <details class="keyboard-region-list">
+                            <summary>純鍵盤操作：選區清單（跟點地圖效果相同）</summary>
+                            <ul>
+                                <template x-for="d in districts" :key="d.district_id">
+                                    <li>
+                                        <button
+                                            type="button"
+                                            :class="{ active: selectedDistrict?.district_id === d.district_id }"
+                                            @click="selectDistrictById(d.district_id)"
+                                            @focus="hoverDistrictById(d.district_id)"
+                                            @blur="hoveredDistrict = null"
+                                        >
+                                            <span class="swatch" :style="`background:${d.color}`"></span>
+                                            <span x-text="d.name"></span>
+                                        </button>
+                                    </li>
+                                </template>
+                            </ul>
+                        </details>
+                    </section>
+
+                    <section x-show="selectedDistrict" x-cloak>
+                        <div class="panel-heading">
+                            <h2 x-text="selectedDistrict?.name"></h2>
+                            <button type="button" class="panel-close" @click="closeDetail()">關閉</button>
+                        </div>
+                        <svg viewBox="0 0 120 120" width="120" height="120" class="pie-chart" x-html="pieChartSvg(selectedDistrict)"></svg>
+                        <ul>
+                            <template x-for="c in selectedDistrict?.candidates ?? []" :key="c.candidacy_id">
+                                <li>
+                                    <span class="swatch" :style="`background:${c.color}`"></span>
+                                    <span x-text="c.label"></span>
+                                    <span x-show="c.is_elected"> ✓當選</span>
+                                    <strong x-text="c.votes.toLocaleString()"></strong> 票
+                                    <span class="pct" x-text="`(${votePct(c, selectedDistrict)}%)`"></span>
+                                </li>
+                            </template>
+                        </ul>
+                    </section>
+
+                    <section x-show="selectedDistrict" x-cloak>
+                        <h2>政黨席次</h2>
+                        <ul>
+                            <template x-for="p in selectedDistrict?.party_seats ?? []" :key="p.party_name ?? 'other'">
+                                <li>
+                                    <span class="swatch" :style="`background:${p.color}`"></span>
+                                    <span x-text="p.party_name ?? '其他'"></span>
+                                    <strong x-text="p.seats"></strong> 席
+                                    <span class="pct" x-text="`(${seatPct(p, selectedDistrict)}%)`"></span>
+                                </li>
+                            </template>
+                        </ul>
+                    </section>
+                </aside>
+            </div>
+        </div>
+
+    </div>
+    <script src="js/app.js"></script>
+</body>
+</html>

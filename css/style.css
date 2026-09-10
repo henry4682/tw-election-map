@@ -1,0 +1,799 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+:root {
+    --bg: #0f1117;
+    --panel: #141820;
+    --panel-alt: #1a1e26;
+    --border: #1e2535;
+    --border-strong: #2a3040;
+    --text: #ffffff;
+    --text-secondary: #c8d0e0;
+    --text-muted: #8892a4;
+    --text-faint: #6b7688;
+    --text-dim: #4a5568;
+}
+
+/* 淺色主題：只換色票，其餘版面/間距規則跟深色共用同一份 CSS 不重複。 */
+:root[data-theme='light'] {
+    --bg: #f6f7fa;
+    --panel: #ffffff;
+    --panel-alt: #edeff4;
+    --border: #e1e4ec;
+    --border-strong: #c7cddb;
+    --text: #12151c;
+    --text-secondary: #333a4a;
+    --text-muted: #5b6479;
+    --text-faint: #7a839a;
+    --text-dim: #a6adbe;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+[x-cloak] {
+    display: none !important;
+}
+
+html,
+body {
+    background: var(--bg);
+}
+
+body {
+    margin: 0;
+    font-family: 'DM Sans', 'Noto Sans TC', system-ui, -apple-system, sans-serif;
+    color: var(--text-secondary);
+}
+
+.mono {
+    font-family: 'JetBrains Mono', 'Noto Sans TC', monospace;
+}
+
+* {
+    scrollbar-width: none;
+}
+
+*::-webkit-scrollbar {
+    display: none;
+}
+
+*:hover {
+    scrollbar-width: thin;
+}
+
+*:hover::-webkit-scrollbar {
+    display: block;
+    width: 4px;
+}
+
+*::-webkit-scrollbar-track {
+    background: var(--bg);
+}
+
+*::-webkit-scrollbar-thumb {
+    background: var(--border-strong);
+    border-radius: 2px;
+}
+
+header {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+}
+
+header h1 {
+    margin: 0;
+    font-size: 1.1rem;
+    color: var(--text);
+    font-weight: 700;
+}
+
+.mode-toggle {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.mode-toggle button {
+    width: auto;
+    margin: 0;
+    padding: 0.35rem 0.75rem;
+    font-size: 0.85rem;
+    background: transparent;
+    border: 1px solid var(--border-strong);
+    color: var(--text-muted);
+}
+
+.mode-toggle button:hover {
+    background: var(--panel);
+    color: var(--text);
+}
+
+.mode-toggle button.active {
+    background: var(--panel-alt);
+    color: var(--text);
+    border-color: var(--text);
+}
+
+#app {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+}
+
+.view {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.toolbar {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.5rem 1rem;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+}
+
+.toolbar p {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+}
+
+.breadcrumb {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+.breadcrumb a {
+    color: var(--text-secondary);
+    text-decoration: none;
+}
+
+.breadcrumb a:hover {
+    color: var(--text);
+    text-decoration: underline;
+}
+
+.breadcrumb strong {
+    color: var(--text);
+}
+
+.layout {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+}
+
+.election-sidebar {
+    width: 220px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid var(--border);
+    overflow: hidden;
+}
+
+.election-sidebar-header {
+    padding: 1rem 1.1rem 0.75rem;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+}
+
+.theme-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-bottom: 0.6rem;
+}
+
+.theme-toggle span {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+}
+
+/* 開關本體：checkbox 隱藏、用 label 的 ::before/::after 畫軌道+圓鈕，不用額外套件。 */
+.theme-switch {
+    position: relative;
+    display: inline-block;
+    width: 2.1rem;
+    height: 1.15rem;
+    flex-shrink: 0;
+}
+
+.theme-switch input {
+    position: absolute;
+    opacity: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    cursor: pointer;
+}
+
+.theme-switch-track {
+    position: absolute;
+    inset: 0;
+    background: var(--border-strong);
+    border-radius: 999px;
+    transition: background 0.15s ease;
+    /* 純裝飾用的軌道疊在 input 正上方，不擋掉點擊判定——不然點下去的座標命中的是這個
+       裝飾用 span 而不是底下的 checkbox，某些瀏覽器/自動化測試的 hit-test 不會走
+       label 的預設轉發行為，點了沒反應。 */
+    pointer-events: none;
+}
+
+.theme-switch-track::after {
+    content: '';
+    position: absolute;
+    top: 0.15rem;
+    left: 0.15rem;
+    width: 0.85rem;
+    height: 0.85rem;
+    border-radius: 50%;
+    background: var(--panel);
+    transition: transform 0.15s ease;
+}
+
+.theme-switch input:checked ~ .theme-switch-track {
+    background: var(--text);
+}
+
+.theme-switch input:checked ~ .theme-switch-track::after {
+    transform: translateX(0.95rem);
+}
+
+.eyebrow {
+    font-size: 0.68rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 0.35rem;
+}
+
+.election-sidebar-count {
+    margin: 0;
+    font-size: 0.72rem;
+    color: var(--text-faint);
+}
+
+.election-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0.4rem 0;
+}
+
+.election-item {
+    display: block;
+    width: 100%;
+    margin: 0;
+    padding: 0.65rem 1.1rem;
+    border: none;
+    border-left: 2px solid transparent;
+    border-radius: 0;
+    background: transparent;
+    text-align: left;
+    cursor: pointer;
+}
+
+.election-item:hover {
+    background: var(--panel);
+    border-left-color: var(--border-strong);
+}
+
+.election-item.active {
+    background: var(--panel-alt);
+    border-left-color: var(--text);
+}
+
+.election-year {
+    display: block;
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--text-secondary);
+}
+
+.election-item.active .election-year,
+.election-item:hover .election-year {
+    color: var(--text);
+}
+
+.election-name {
+    display: block;
+    margin-top: 0.15rem;
+    font-size: 0.72rem;
+    color: var(--text-faint);
+    line-height: 1.35;
+}
+
+.map-pane {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    background: var(--bg);
+}
+
+.inset-map {
+    position: absolute;
+    border: 1px solid var(--border-strong);
+    background: var(--bg);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+    z-index: 1;
+}
+
+.inset-map--nested {
+    box-shadow: none;
+}
+
+.inset-label {
+    position: absolute;
+    top: 2px;
+    left: 4px;
+    font-size: 11px;
+    color: var(--text-muted);
+    z-index: 1;
+    pointer-events: none;
+}
+
+.tooltip {
+    position: absolute;
+    z-index: 5;
+    pointer-events: none;
+    background: var(--panel-alt);
+    color: var(--text);
+    padding: 0.4rem 0.6rem;
+    border: 1px solid var(--border-strong);
+    border-radius: 4px;
+    font-size: 0.8rem;
+    line-height: 1.5;
+    white-space: nowrap;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+
+.tooltip .hint {
+    white-space: normal;
+    max-width: 160px;
+}
+
+.tooltip-swatch {
+    display: inline-block;
+    width: 0.6rem;
+    height: 0.6rem;
+    border-radius: 2px;
+    margin-right: 0.25rem;
+    vertical-align: middle;
+}
+
+.sidebar-pane {
+    width: 280px;
+    flex-shrink: 0;
+    overflow-y: auto;
+    border-left: 1px solid var(--border);
+    padding: 1rem;
+    background: var(--panel);
+}
+
+.sidebar-pane section {
+    margin-bottom: 1.5rem;
+}
+
+.sidebar-pane h2 {
+    font-size: 0.95rem;
+    margin: 0 0 0.5rem;
+    color: var(--text);
+}
+
+.legend {
+    list-style: none;
+    margin: 0 0 0.75rem;
+    padding: 0;
+}
+
+.legend li {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.2rem 0;
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+}
+
+.legend strong {
+    margin-left: auto;
+    font-family: 'JetBrains Mono', 'Noto Sans TC', monospace;
+    color: var(--text);
+}
+
+.swatch {
+    width: 0.9rem;
+    height: 0.9rem;
+    border-radius: 2px;
+    flex-shrink: 0;
+}
+
+.pie-chart {
+    display: block;
+    margin: 0.25rem 0 0.75rem;
+}
+
+/* A11Y-01：地圖選區只能用滑鼠點/hover 操作，這裡補一份純鍵盤可操作的等效清單，預設
+   收合（多數人用滑鼠操作地圖，不需要一直佔畫面空間），focus 進清單或按 Enter 展開。 */
+.keyboard-region-list {
+    margin: 0.5rem 0 0.75rem;
+    font-size: 0.85rem;
+}
+
+.keyboard-region-list summary {
+    cursor: pointer;
+    color: var(--text-secondary);
+}
+
+.keyboard-region-list ul {
+    list-style: none;
+    margin: 0.4rem 0 0;
+    padding: 0;
+    max-height: 220px;
+    overflow-y: auto;
+}
+
+.keyboard-region-list li {
+    margin: 0;
+}
+
+.keyboard-region-list button {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    width: 100%;
+    padding: 0.3rem 0.4rem;
+    background: none;
+    border: none;
+    color: var(--text);
+    font-size: 0.85rem;
+    text-align: left;
+    cursor: pointer;
+}
+
+.keyboard-region-list button:hover,
+.keyboard-region-list button.active {
+    background: var(--panel-alt);
+}
+
+.sidebar-pane section:last-of-type ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.sidebar-pane section:last-of-type li {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.2rem 0;
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+}
+
+.sidebar-pane section:last-of-type strong {
+    margin-left: auto;
+    font-family: 'JetBrains Mono', 'Noto Sans TC', monospace;
+    color: var(--text);
+}
+
+.pct {
+    color: var(--text-faint);
+    font-size: 0.8rem;
+    font-family: 'JetBrains Mono', 'Noto Sans TC', monospace;
+}
+
+.hint {
+    margin: 0.5rem 0 0;
+    color: var(--text-faint);
+    font-size: 0.78rem;
+    line-height: 1.4;
+}
+
+/* 五個地圖模式共用的載入/錯誤/切換失敗提示區塊（見 IMPROVEMENT_PLAN.md 第一階段）。 */
+.status-banner {
+    margin: 0.75rem 0;
+    padding: 0.6rem 0.9rem;
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    background: var(--panel-alt);
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    line-height: 1.5;
+}
+
+.status-banner.status-error {
+    border-color: #b3413a;
+    color: #d9645c;
+}
+
+.status-banner.status-warning {
+    border-color: #b08a2e;
+    color: #c99a34;
+}
+
+.status-banner p {
+    margin: 0 0 0.4rem;
+}
+
+.status-banner button {
+    padding: 0.3rem 0.7rem;
+    border: 1px solid var(--border-strong);
+    border-radius: 4px;
+    background: var(--panel);
+    color: var(--text);
+    cursor: pointer;
+}
+
+/*
+ * 政黨選取清單（predictionMap 的「指定政黨給選取縣市」區塊）：整條列當按鈕點擊，跟
+ * .legend li 純顯示用不一樣，所以另外給 padding/hover 而不是直接重用 .legend li。
+ */
+.party-pick {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    width: 100%;
+    margin: 0 0 0.3rem;
+    padding: 0.35rem 0.5rem;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--text-secondary);
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    text-align: left;
+}
+
+.party-pick:hover {
+    background: var(--panel-alt);
+    border-color: var(--border-strong);
+    color: var(--text);
+}
+
+.party-pick .pct {
+    margin-left: auto;
+}
+
+/**
+ * predictionMap 選舉/顯示層級/填色層級選擇器，跟 .add-party-form 共用同一組輸入框視覺
+ * 語言（border/background 用 --panel/--border-strong）。放在地圖上方的 .toolbar
+ * （.predict-controls）裡橫排，不是側欄——這種「決定整張圖要畫什麼」的設定跟鑽層麵包屑
+ * 一樣是「畫面層級」的控制項，比較適合放在地圖上方固定看得到的地方，不用跟著側欄一起
+ * 捲動或被其他分頁切換蓋過去。
+ */
+.level-picker {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+}
+
+.level-picker select {
+    padding: 0.3rem 0.4rem;
+    border: 1px solid var(--border-strong);
+    background: var(--panel);
+    color: var(--text);
+    border-radius: 4px;
+    font-size: 0.82rem;
+}
+
+.predict-controls {
+    flex-wrap: wrap;
+    row-gap: 0.4rem;
+}
+
+.add-party-form {
+    display: flex;
+    gap: 0.4rem;
+    margin: 0.5rem 0;
+}
+
+.add-party-form input[type='text'] {
+    flex: 1;
+    min-width: 0;
+    padding: 0.35rem 0.5rem;
+    border: 1px solid var(--border-strong);
+    background: var(--panel);
+    color: var(--text);
+    border-radius: 4px;
+    font-size: 0.85rem;
+}
+
+.add-party-form input[type='color'] {
+    width: 2.2rem;
+    padding: 0;
+    border: 1px solid var(--border-strong);
+    border-radius: 4px;
+    background: var(--panel);
+    cursor: pointer;
+}
+
+.add-party-form button {
+    width: auto;
+    margin: 0;
+    padding: 0.35rem 0.75rem;
+}
+
+.remove-party {
+    margin-left: auto;
+    width: auto;
+    padding: 0.1rem 0.4rem;
+    font-size: 0.75rem;
+    color: var(--text-faint);
+}
+
+button {
+    display: block;
+    width: 100%;
+    margin-bottom: 0.5rem;
+    padding: 0.5rem;
+    border: 1px solid var(--border-strong);
+    background: var(--panel);
+    color: var(--text-secondary);
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.85rem;
+}
+
+button:hover {
+    background: var(--panel-alt);
+    color: var(--text);
+}
+
+/*
+ * 窄螢幕（見 IMPROVEMENT_PLAN.md 獨立改善項目：RWD 與基本操作可用性）：桌面版三個
+ * 分頁共用的 .layout 是固定寬度側欄（220px 選舉清單 + 280px 明細）左右夾住地圖，窄螢幕
+ * 下兩條側欄合計就超過手機螢幕寬度，把地圖擠到看不到——改成直式堆疊（地圖在上，側欄
+ * 在下，全寬），並讓整個頁面可以自然捲動（不再假設所有內容都要塞進單一個 100vh）。
+ * .sidebar-toggle／.panel-close 兩個按鈕平常（桌面）不出現，只在這個斷點下用來收合
+ * 選舉清單、關閉明細面板；行為由 app.js 的 mobileNavOpen 旗標與各元件既有的
+ * selectedRegion/selectedDistrict 控制，這裡只負責窄螢幕下的顯示切換。
+ */
+.sidebar-toggle {
+    display: none;
+}
+
+.panel-close {
+    display: none;
+}
+
+@media (max-width: 860px) {
+    html,
+    body {
+        height: auto;
+    }
+
+    #app {
+        height: auto;
+        min-height: 100vh;
+    }
+
+    header {
+        flex-wrap: nowrap;
+    }
+
+    header h1 {
+        font-size: 0.95rem;
+        white-space: nowrap;
+        flex-shrink: 0;
+    }
+
+    /* 三個模式的分頁按鈕在極窄螢幕上放不下，改成橫向捲動而不是擠壓/換行，維持按鈕本身
+       的可點擊尺寸（見 RWD-01「主要按鈕可達」）。 */
+    .mode-toggle {
+        overflow-x: auto;
+        flex-wrap: nowrap;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .mode-toggle button {
+        flex-shrink: 0;
+        white-space: nowrap;
+    }
+
+    .view,
+    .layout {
+        min-height: 0;
+    }
+
+    .layout {
+        flex-direction: column;
+    }
+
+    /* 地圖保留最小可用高度，不會因為下面堆了選舉清單/明細而被壓成一條縫（見 RWD-01）。 */
+    .map-pane {
+        flex: none;
+        min-height: 55vh;
+    }
+
+    .election-sidebar,
+    .sidebar-pane {
+        width: auto;
+        flex-shrink: 0;
+    }
+
+    .election-sidebar {
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+    }
+
+    /* 選舉清單本身保留內部捲動上限，避免選舉場次一多（十幾二十場）把下面的明細/地圖
+       推到很遠的地方才捲得到——跟桌面版「側欄自己捲動、不隨頁面捲」同一種取捨，只是
+       窄螢幕下這個上限用 vh 而不是佔滿整個側欄高度。 */
+    .election-list {
+        max-height: 42vh;
+    }
+
+    .election-sidebar.is-collapsed .election-list {
+        display: none;
+    }
+
+    .sidebar-toggle {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 2.3rem;
+        height: 2.3rem;
+        flex-shrink: 0;
+        padding: 0;
+        margin: 0;
+        border: 1px solid var(--border-strong);
+        border-radius: 4px;
+        background: var(--panel);
+        color: var(--text);
+        font-size: 1.1rem;
+        line-height: 1;
+        cursor: pointer;
+    }
+
+    .election-sidebar-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 0.5rem;
+    }
+
+    .election-sidebar-header > div:first-child {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .sidebar-pane {
+        border-left: none;
+        border-top: 1px solid var(--border);
+    }
+
+    /* 明細（點選區後才出現的那個 section）標題列改成可以放「關閉並回到地圖」按鈕，
+       見 app.js 各元件的 closeDetail()（見 RWD-03「面板可關閉並回到地圖」）。 */
+    .panel-heading {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .panel-heading h2 {
+        margin: 0;
+        flex: 1;
+        min-width: 0;
+    }
+
+    .panel-close {
+        display: block;
+        width: auto;
+        flex-shrink: 0;
+        margin: 0;
+        padding: 0.3rem 0.65rem;
+        font-size: 0.78rem;
+    }
+}

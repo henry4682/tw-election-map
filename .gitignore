@@ -1,0 +1,9 @@
+.DS_Store
+Thumbs.db
+
+# Playwright smoke test：devDependency 安裝、測試用暫存靜態伺服根目錄、執行報表，
+# 都是可重新產生的本機/CI 產物，不進版控。
+/test/e2e/node_modules/
+/test/e2e/.serve-root/
+/test/e2e/test-results/
+/test/e2e/playwright-report/

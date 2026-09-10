@@ -1,0 +1,13 @@
+{
+  "name": "tw-election-map-e2e",
+  "private": true,
+  "description": "只給 Playwright smoke test 用的獨立 package.json（見 IMPROVEMENT_PLAN.md 第三階段）——跟 frontend/ 本身「沒有 build 工具」的原則不衝突：這裡的 devDependency 只驅動測試，不會被 index.html 載入，也不影響實際部署的靜態資產。",
+  "devDependencies": {
+    "@playwright/test": "^1.47.0",
+    "http-server": "^14.1.1"
+  },
+  "scripts": {
+    "pretest": "node build-serve-root.js",
+    "test": "playwright test"
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "label": "現任立法院",
+  "parties": [
+    { "party_name": "甲黨", "seats": 51, "color": "#1b9431" },
+    { "party_name": "乙黨", "seats": 52, "color": "#000099" }
+  ]
+}

@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "election": { "id": 1, "name": "測試縣市長選舉", "type": "county_mayor", "date": "2024-01-13" },
+  "top_level": "county",
+  "candidates": [
+    { "candidacy_id": 101, "label": "甲黨 王小明", "party_name": "甲黨", "color": "#1b9431" },
+    { "candidacy_id": 102, "label": "乙黨 李小華", "party_name": "乙黨", "color": "#000099" }
+  ],
+  "regions": [
+    {
+      "region_id": 1,
+      "name": "甲縣",
+      "level": "county",
+      "geometry": { "type": "Polygon", "coordinates": [[[121.40, 24.90], [121.60, 24.90], [121.60, 25.10], [121.40, 25.10], [121.40, 24.90]]] },
+      "actual_winner_candidacy_id": 101,
+      "results": [ { "candidacy_id": 101, "votes": 1200 }, { "candidacy_id": 102, "votes": 800 } ],
+      "children": [
+        {
+          "region_id": 11,
+          "name": "甲鄉",
+          "level": "township",
+          "geometry": { "type": "Polygon", "coordinates": [[[121.50, 25.03], [121.52, 25.03], [121.52, 25.05], [121.50, 25.05], [121.50, 25.03]]] },
+          "actual_winner_candidacy_id": 101,
+          "results": [ { "candidacy_id": 101, "votes": 600 }, { "candidacy_id": 102, "votes": 400 } ],
+          "children": [
+            {
+              "region_id": 111,
+              "name": "甲村",
+              "level": "village",
+              "geometry": { "type": "Polygon", "coordinates": [[[121.505, 25.035], [121.515, 25.035], [121.515, 25.045], [121.505, 25.045], [121.505, 25.035]]] },
+              "actual_winner_candidacy_id": 101,
+              "results": [ { "candidacy_id": 101, "votes": 300 }, { "candidacy_id": 102, "votes": 200 } ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "region_id": 2,
+      "name": "金門縣",
+      "level": "county",
+      "geometry": { "type": "Polygon", "coordinates": [[[118.30, 24.43], [118.45, 24.43], [118.45, 24.52], [118.30, 24.52], [118.30, 24.43]]] },
+      "actual_winner_candidacy_id": 102,
+      "results": [ { "candidacy_id": 102, "votes": 350 }, { "candidacy_id": 101, "votes": 150 } ],
+      "children": [
+        {
+          "region_id": 21,
+          "name": "金城鎮",
+          "level": "township",
+          "geometry": { "type": "Polygon", "coordinates": [[[118.31, 24.44], [118.33, 24.44], [118.33, 24.46], [118.31, 24.46], [118.31, 24.44]]] },
+          "actual_winner_candidacy_id": 102,
+          "results": [ { "candidacy_id": 102, "votes": 350 }, { "candidacy_id": 101, "votes": 150 } ],
+          "children": [
+            {
+              "region_id": 211,
+              "name": "金城村",
+              "level": "village",
+              "geometry": { "type": "Polygon", "coordinates": [[[118.315, 24.445], [118.325, 24.445], [118.325, 24.455], [118.315, 24.455], [118.315, 24.445]]] },
+              "actual_winner_candidacy_id": 102,
+              "results": [ { "candidacy_id": 102, "votes": 350 }, { "candidacy_id": 101, "votes": 150 } ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
