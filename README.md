@@ -12,7 +12,7 @@
 - **歷屆選舉地圖**：從縣市一路鑽層到村里，瀏覽歷屆總統、立委、縣市長等選舉在各層級的實際得票與贏家分布。
 - **議員/代表選區地圖**：依選區檢視各政黨當選席次分布與候選人得票明細。
 - 金門/馬祖等離島以獨立小地圖（inset）呈現，不會被主地圖的座標範圍稀釋掉。
-- 純鍵盤可操作的行政區清單、可收合的窄螢幕版面，支援桌面與行動裝置。
+- 響應式介面：行政區清單支援鍵盤操作，窄螢幕版面可收合，支援桌面與行動裝置。
 
 ## Architecture
 
@@ -33,9 +33,7 @@ CEC（中選會）/ 內政部國土測繪中心 開放資料
               └── Cloudflare Workers Static Assets
 ```
 
-前端不會直接呼叫中選會或任何即時 API，也不由後端 serve 動態內容——所有資料在後端整理好之後匯出成靜態檔案，這個 repo 純粹是「靜態檔案 + 瀏覽器端渲染」，跟後端完全解耦。
-
-此 repository 為公開部署用的靜態前端版本。資料整理、行政區界處理與匯出由另一個 Laravel/Filament 後端專案負責（維持私有，內部行政區界編輯/ETL 管理工具），本 repository 僅包含可公開部署的前端程式與匯出資料。
+前端不會直接呼叫中選會或任何即時 API，也不由後端 serve 動態內容。資料整理、行政區界處理與匯出由另一個私有 Laravel/Filament 專案負責，再透過 `election:export-*` 匯出為靜態檔案。本 repository 僅包含公開部署所需的前端程式與資料，與後端執行環境完全解耦。
 
 ## 目錄結構
 
@@ -68,7 +66,10 @@ node --test "test/*.test.js"
 ```bash
 cd test/e2e
 npm install
-npx playwright install chromium   # 第一次執行需要先安裝瀏覽器執行檔
+
+# 第一次執行需要安裝 Chromium
+npx playwright install chromium
+
 npm test
 ```
 
