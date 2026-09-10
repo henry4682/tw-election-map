@@ -92,6 +92,30 @@ header h1 {
     font-weight: 700;
 }
 
+.header-right {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    min-width: 0;
+}
+
+.github-link {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    color: var(--text-muted);
+}
+
+.github-link:hover {
+    color: var(--text);
+}
+
+.github-link svg {
+    width: 20px;
+    height: 20px;
+    fill: currentColor;
+}
+
 .mode-toggle {
     display: flex;
     gap: 0.5rem;
