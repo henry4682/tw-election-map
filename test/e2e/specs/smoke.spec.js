@@ -315,6 +315,192 @@ test.describe('exported image carries election context (UX-02)', () => {
     });
 });
 
+test.describe('share to social platforms (Web Share API)', () => {
+    test('the share button is hidden when the browser has no navigator.share (this test browser)', async ({ page }) => {
+        await page.goto('/');
+        await waitMapReady(page, 'map');
+
+        const shareButton = page.locator('.view[x-show*="predict"] button', { hasText: '分享' });
+        await expect(shareButton).toBeHidden();
+    });
+
+    test('shareImage() calls navigator.share with a PNG file when file sharing is supported, and does not fall back to download', async ({ page }) => {
+        await page.goto('/');
+        await waitMapReady(page, 'map');
+
+        const result = await page.evaluate(async () => {
+            const el = document.querySelector('[x-data^="predictionMap"]');
+            const data = window.Alpine.$data(el);
+
+            let sharedFileInfo = null;
+            let downloadTriggered = false;
+
+            navigator.canShare = () => true;
+            navigator.share = async (payload) => {
+                const file = payload.files[0];
+                sharedFileInfo = { name: file.name, type: file.type, size: file.size };
+            };
+
+            const originalClick = HTMLAnchorElement.prototype.click;
+            HTMLAnchorElement.prototype.click = function () { downloadTriggered = true; };
+
+            try {
+                await data.shareImage();
+            } finally {
+                HTMLAnchorElement.prototype.click = originalClick;
+                delete navigator.canShare;
+                delete navigator.share;
+            }
+
+            return { sharedFileInfo, downloadTriggered };
+        });
+
+        expect(result.downloadTriggered).toBe(false);
+        expect(result.sharedFileInfo?.type).toBe('image/png');
+        expect(result.sharedFileInfo?.size).toBeGreaterThan(0);
+    });
+
+    test('shareImage() falls back to download when navigator.canShare rejects the file (unsupported browser)', async ({ page }) => {
+        await page.goto('/');
+        await waitMapReady(page, 'map');
+
+        const result = await page.evaluate(async () => {
+            const el = document.querySelector('[x-data^="predictionMap"]');
+            const data = window.Alpine.$data(el);
+
+            let shareCalled = false;
+            let downloadTriggered = false;
+
+            navigator.canShare = () => false;
+            navigator.share = async () => { shareCalled = true; };
+
+            const originalClick = HTMLAnchorElement.prototype.click;
+            HTMLAnchorElement.prototype.click = function () { downloadTriggered = true; };
+
+            try {
+                await data.shareImage();
+            } finally {
+                HTMLAnchorElement.prototype.click = originalClick;
+                delete navigator.canShare;
+                delete navigator.share;
+            }
+
+            return { shareCalled, downloadTriggered };
+        });
+
+        expect(result.shareCalled).toBe(false);
+        expect(result.downloadTriggered).toBe(true);
+    });
+
+    test('shareImage() falls back to download when the user cancels the native share sheet (AbortError), not treated as a failure', async ({ page }) => {
+        await page.goto('/');
+        await waitMapReady(page, 'map');
+
+        const result = await page.evaluate(async () => {
+            const el = document.querySelector('[x-data^="predictionMap"]');
+            const data = window.Alpine.$data(el);
+
+            let downloadTriggered = false;
+
+            navigator.canShare = () => true;
+            navigator.share = async () => { throw new DOMException('cancelled', 'AbortError'); };
+
+            const originalClick = HTMLAnchorElement.prototype.click;
+            HTMLAnchorElement.prototype.click = function () { downloadTriggered = true; };
+
+            try {
+                await data.shareImage();
+            } finally {
+                HTMLAnchorElement.prototype.click = originalClick;
+                delete navigator.canShare;
+                delete navigator.share;
+            }
+
+            return { downloadTriggered };
+        });
+
+        // AbortError（使用者自己取消）不該退回下載——那樣反而會在使用者主動取消後意外
+        // 觸發一次下載，這裡驗證只有「真的失敗」才會退回下載（見另一個案例）。
+        expect(result.downloadTriggered).toBe(false);
+    });
+});
+
+// 桌面瀏覽器比較實際能用的分享替代方案（見 copyImageToClipboard() 註解）。Playwright
+// 用的 Chromium 支援 ClipboardItem/navigator.clipboard.write，不用像 Web Share API
+// 案例那樣整個 mock 掉——但寫入真的系統剪貼簿在無頭/CI 環境不穩定，這裡改成攔截
+// navigator.clipboard.write 本身（驗證「有沒有被正確呼叫、帶什麼內容」），不依賴真的
+// 讀回系統剪貼簿內容。
+test.describe('copy image to clipboard (desktop share alternative)', () => {
+    test('the copy button is visible in this test browser and calls navigator.clipboard.write with a PNG ClipboardItem', async ({ page }) => {
+        await page.goto('/');
+        await waitMapReady(page, 'map');
+
+        const copyButton = page.locator('.view[x-show*="predict"] button', { hasText: '複製圖片' });
+        await expect(copyButton).toBeVisible();
+
+        const result = await page.evaluate(async () => {
+            const el = document.querySelector('[x-data^="predictionMap"]');
+            const data = window.Alpine.$data(el);
+
+            let writtenItemTypes = null;
+            let downloadTriggered = false;
+
+            const originalWrite = navigator.clipboard.write.bind(navigator.clipboard);
+            navigator.clipboard.write = async (items) => {
+                writtenItemTypes = items[0].types;
+            };
+
+            const originalClick = HTMLAnchorElement.prototype.click;
+            HTMLAnchorElement.prototype.click = function () { downloadTriggered = true; };
+
+            try {
+                await data.copyImageToClipboard();
+            } finally {
+                navigator.clipboard.write = originalWrite;
+                HTMLAnchorElement.prototype.click = originalClick;
+            }
+
+            return { writtenItemTypes, downloadTriggered, shareStatus: data.shareStatus };
+        });
+
+        expect(result.downloadTriggered).toBe(false);
+        expect(result.writtenItemTypes).toContain('image/png');
+        expect(result.shareStatus).toContain('已複製圖片');
+
+        await expect(page.locator('.view[x-show*="predict"] .hint', { hasText: '已複製圖片' })).toBeVisible();
+    });
+
+    test('falls back to download and shows a status message when clipboard write is rejected (e.g. permission denied)', async ({ page }) => {
+        await page.goto('/');
+        await waitMapReady(page, 'map');
+
+        const result = await page.evaluate(async () => {
+            const el = document.querySelector('[x-data^="predictionMap"]');
+            const data = window.Alpine.$data(el);
+
+            let downloadTriggered = false;
+
+            const originalWrite = navigator.clipboard.write.bind(navigator.clipboard);
+            navigator.clipboard.write = async () => { throw new DOMException('denied', 'NotAllowedError'); };
+
+            const originalClick = HTMLAnchorElement.prototype.click;
+            HTMLAnchorElement.prototype.click = function () { downloadTriggered = true; };
+
+            try {
+                await data.copyImageToClipboard();
+            } finally {
+                navigator.clipboard.write = originalWrite;
+                HTMLAnchorElement.prototype.click = originalClick;
+            }
+
+            return { downloadTriggered, shareStatus: data.shareStatus };
+        });
+
+        expect(result.downloadTriggered).toBe(true);
+        expect(result.shareStatus).toContain('已改為下載');
+    });
+});
+
 test.describe('narrow viewport layout (RWD-01)', () => {
     test('at 360px width, nav/map/election list/detail are all reachable with no page-level horizontal overflow', async ({ page }) => {
         await page.setViewportSize({ width: 360, height: 740 });

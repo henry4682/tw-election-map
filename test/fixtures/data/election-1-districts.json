@@ -1,35 +1,68 @@
 {
-  "schema_version": 1,
-  "election": { "id": 1, "name": "測試區域立委選舉", "date": "2024-01-13" },
+  "schema_version": 2,
+  "election": {
+    "id": 1,
+    "name": "測試區域立委選舉",
+    "date": "2024-01-13"
+  },
   "districts": [
     {
       "district_id": 1,
       "name": "甲縣第01選區",
-      "geometry": { "type": "Polygon", "coordinates": [[[121.40, 24.90], [121.60, 24.90], [121.60, 25.10], [121.40, 25.10], [121.40, 24.90]]] },
       "total_seats": 1,
       "leading_party_name": "甲黨",
       "color": "#1b9431",
       "party_seats": [
-        { "party_name": "甲黨", "seats": 1, "color": "#1b9431" }
+        {
+          "party_name": "甲黨",
+          "seats": 1,
+          "color": "#1b9431"
+        }
       ],
       "candidates": [
-        { "candidacy_id": 201, "label": "甲黨 王小明", "party_name": "甲黨", "color": "#1b9431", "votes": 5000, "is_elected": true },
-        { "candidacy_id": 202, "label": "乙黨 李小華", "party_name": "乙黨", "color": "#000099", "votes": 3000, "is_elected": false }
-      ]
+        {
+          "candidacy_id": 201,
+          "label": "甲黨 王小明",
+          "party_name": "甲黨",
+          "color": "#1b9431",
+          "votes": 5000,
+          "is_elected": true
+        },
+        {
+          "candidacy_id": 202,
+          "label": "乙黨 李小華",
+          "party_name": "乙黨",
+          "color": "#000099",
+          "votes": 3000,
+          "is_elected": false
+        }
+      ],
+      "geometry_hash": "9fb07522f6955b88afec78abf99b681c"
     },
     {
       "district_id": 2,
       "name": "金門縣選舉區",
-      "geometry": { "type": "Polygon", "coordinates": [[[118.30, 24.43], [118.45, 24.43], [118.45, 24.52], [118.30, 24.52], [118.30, 24.43]]] },
       "total_seats": 1,
       "leading_party_name": "乙黨",
       "color": "#000099",
       "party_seats": [
-        { "party_name": "乙黨", "seats": 1, "color": "#000099" }
+        {
+          "party_name": "乙黨",
+          "seats": 1,
+          "color": "#000099"
+        }
       ],
       "candidates": [
-        { "candidacy_id": 203, "label": "乙黨 陳小美", "party_name": "乙黨", "color": "#000099", "votes": 2000, "is_elected": true }
-      ]
+        {
+          "candidacy_id": 203,
+          "label": "乙黨 陳小美",
+          "party_name": "乙黨",
+          "color": "#000099",
+          "votes": 2000,
+          "is_elected": true
+        }
+      ],
+      "geometry_hash": "6b441ea60576496bf219ed3591f8a983"
     }
   ]
 }

@@ -27,8 +27,10 @@
  * @typedef {Object} RegionNode
  * @property {number} region_id
  * @property {string} name
- * @property {Object|null} geometry - GeoJSON geometry；少數行政區為 null（見
- *   CLAUDE.md「地圖上看到白色色塊」已知資料缺口），呼叫端需自行過濾。
+ * @property {string|null} geometry_hash - 參照共用幾何表（見 fetchGeometries()/
+ *   geometryFor()）的內容雜湊，不是這個節點自己內嵌完整 GeoJSON geometry；少數行政區
+ *   沒有幾何資料是 null（見 CLAUDE.md「地圖上看到白色色塊」已知資料缺口），呼叫端一律
+ *   透過 geometryFor() 取得實際 geometry，不要直接讀這個欄位。
  * @property {VoteResult[]} results - 依票數 DESC 排序。
  * @property {number} actual_winner_candidacy_id
  * @property {number} [assigned_candidacy_id] - 僅 predictionMap() 的複製樹上會寫入。
@@ -41,7 +43,7 @@
  * @typedef {Object} District
  * @property {number} district_id
  * @property {string} name
- * @property {Object|null} geometry
+ * @property {string|null} geometry_hash - 見 RegionNode 的同名欄位註解。
  * @property {string} color
  * @property {number} total_seats
  * @property {{party_name: string|null, color: string, seats: number}[]} party_seats
@@ -62,8 +64,10 @@ const DISTRICT_MAP_INDEX_URL = 'data/district-map-index.json';
 const districtMapDataUrl = (id, hash) => withVersion(`data/election-${id}-districts.json`, hash);
 
 // 對應後端 ElectionResultsMapBuilder 的 SCHEMA_VERSION_* 常數，兩邊要一起改。
-const SCHEMA_VERSION_DRILLDOWN = 1;
-const SCHEMA_VERSION_DISTRICT_MAP = 1;
+// 2：region/district 節點改成 geometry_hash 參照共用幾何表，不再內嵌完整 geometry
+// （見 fetchGeometries()/geometryFor() 註解）。
+const SCHEMA_VERSION_DRILLDOWN = 2;
+const SCHEMA_VERSION_DISTRICT_MAP = 2;
 
 // 鑽層地圖等選舉資料檔案動輒 10+MB（全國村里層級幾何+得票），使用者在幾個屆別之間
 // 來回切換時不重新 fetch/解析同一份——只在這次瀏覽 session 的記憶體裡快取，重新整理
@@ -178,6 +182,48 @@ async function fetchElectionData(url, kind, expectedVersion) {
     electionDataInFlight.set(url, request);
 
     return request;
+}
+
+const GEOMETRIES_URL = 'data/geometries.json';
+const SCHEMA_VERSION_GEOMETRIES = 1;
+let geometriesPromise = null;
+
+/**
+ * 幾何去重：drilldown/district 資料原本每個節點都直接內嵌自己的 GeoJSON geometry，
+ * 同一個村里/選區的形狀在 50+ 場選舉的匯出檔案裡幾乎逐字重複——量測過拿掉重複後，
+ * 全部村里/選區形狀只佔原本大小的一小部分（見 IMPROVEMENT_PLAN.md 資料量測章節）。
+ * 現在資料改成每個節點存 `geometry_hash` 參照這裡的共用幾何表，前端渲染前才 resolve
+ * 回實際的 geometry。這份表只抓一次、整個瀏覽 session 共用（不分模式，三個模式都可能
+ * 用到同一批村里形狀），用跟 fetchElectionData() 一樣的 promise 快取避免重複請求；
+ * 一旦抓到就不會再變，不需要跟 electionDataCache 一樣做 LRU 淘汰。
+ */
+function fetchGeometries() {
+    if (! geometriesPromise) {
+        geometriesPromise = fetchJsonOrThrow(GEOMETRIES_URL).then((payload) => {
+            checkSchemaVersion('geometries', payload, SCHEMA_VERSION_GEOMETRIES);
+
+            const store = new Map(Object.entries(payload.geometries));
+
+            deepFreeze(payload);
+
+            return store;
+        });
+    }
+
+    return geometriesPromise;
+}
+
+/**
+ * 三個模式共用：把節點的 geometry_hash 解析成實際的 GeoJSON geometry。節點本來就沒有
+ * 幾何資料（geometry_hash 是 null，見已知資料缺口）或查不到對應的 hash（理論上不會
+ * 發生，除非資料損毀）都回傳 null，呼叫端沿用既有「geometry 是 null 就跳過這個節點」
+ * 的處理方式，不需要另外分支。
+ * @param {{geometry_hash?: string|null}} node
+ * @param {Map<string, object>} geometryStore
+ * @returns {object|null}
+ */
+function geometryFor(node, geometryStore) {
+    return node.geometry_hash ? (geometryStore.get(node.geometry_hash) ?? null) : null;
 }
 
 /**
@@ -971,8 +1017,9 @@ function effectiveFillNodes(region, remainingDepth) {
  * 污染這份快取，不然理論上未來其他消費者讀到同一個 URL 會拿到帶著使用者猜測痕跡的資料。
  *
  * 做法是淺複製每個節點物件本身（連同 children 陣列一路遞迴淺複製），但不複製節點內的
- * geometry/results 等大型欄位——那些欄位的值本來就不會被猜測邏輯改寫，共用同一個參照
- * 不影響隔離效果，也避免鑽層資料動輒 10+MB 的幾何被整份複製一份（見已知效能考量）。
+ * results 等大型欄位——那些欄位的值本來就不會被猜測邏輯改寫，共用同一個參照不影響
+ * 隔離效果。幾何資料現在只是個 geometry_hash 字串參照共用表（見 fetchGeometries()），
+ * 淺複製天然就不會動到真正的幾何內容，不需要另外考慮。
  * @param {RegionNode[]} regions - 可能是 deepFreeze() 過的唯讀樹，回傳值一定是全新的
  *   可寫物件（見 deepFreeze() 相關單元測試），呼叫端不用先自己複製一份。
  * @returns {RegionNode[]}
@@ -1097,6 +1144,9 @@ function predictionMap() {
         election: null,
         candidates: [],
         regionTree: [],
+        // 幾何去重（見 fetchGeometries() 註解）：loadElection() 抓到之後存這裡，
+        // featureCollectionFor()/initInsetMaps() 等要畫圖的地方都透過 geometryFor() 查。
+        geometryStore: null,
         elections: [],
         selectedElectionId: null,
 
@@ -1121,6 +1171,12 @@ function predictionMap() {
         // undoLastEdit() 單步復原；resetToActual()/assignPartyToSelected() 這些會蓋掉
         // 循環結果的動作要清掉它，避免復原跳過使用者後來做的其他變更。
         lastEdit: null,
+
+        // 分享/下載/複製圖片這幾個動作用起來都沒有明顯的畫面變化（系統分享選單、剪貼簿
+        // 寫入都是瀏覽器層級的操作，頁面本身看不出來發生了什麼），用這個暫時提示告訴
+        // 使用者結果；flashShareStatus() 設定後幾秒自動清空，不用使用者自己關掉。
+        shareStatus: '',
+        _shareStatusTimer: null,
 
         // 「指定政黨給選取行政區」用：currentLyParties 是現任立院有席次的政黨（唯讀，來自
         // current-ly-parties.json）；customParties 是使用者自己加的，存 localStorage
@@ -1354,10 +1410,14 @@ function predictionMap() {
         async loadElection(id) {
             id = Number(id);
             const hash = this.elections.find((e) => e.id === id)?.content_hash;
-            const data = await loadElectionOrHandleError(this, drillDownDataUrl(id, hash), 'drilldown', SCHEMA_VERSION_DRILLDOWN);
+            const [data, geometryStore] = await Promise.all([
+                loadElectionOrHandleError(this, drillDownDataUrl(id, hash), 'drilldown', SCHEMA_VERSION_DRILLDOWN),
+                fetchGeometries(),
+            ]);
 
             if (! data) return;
 
+            this.geometryStore = geometryStore;
             this.selectedElectionId = id;
             this.election = data.election;
             this.candidates = data.candidates;
@@ -1446,7 +1506,7 @@ function predictionMap() {
 
                 if (! county) continue;
 
-                const clusters = clusterParts(county.geometry);
+                const clusters = clusterParts(geometryFor(county, this.geometryStore));
 
                 const box = createInsetBox(mapEl, label, INSET_BOX_SIZE, offsetX, 12);
                 this.mountInsetMap(box, county, clusters[0].bbox, 14, label);
@@ -1553,17 +1613,19 @@ function predictionMap() {
 
             return {
                 type: 'FeatureCollection',
-                // 少數行政區的 geometry 是 null（regions.boundary 上游資料缺口，見
+                // 少數行政區沒有幾何資料（regions.boundary 上游資料缺口，見
                 // CLAUDE.md「地圖上看到白色色塊」已知限制），過濾掉不畫，不是 bug。
-                features: regions.filter((r) => r.geometry).map((region) => ({
-                    type: 'Feature',
-                    geometry: region.geometry,
-                    properties: {
-                        region_id: region.region_id,
-                        name: region.name,
-                        color: this.colorFor(region, remainingDepth),
-                    },
-                })),
+                features: regions.map((region) => ({ region, geometry: geometryFor(region, this.geometryStore) }))
+                    .filter(({ geometry }) => geometry)
+                    .map(({ region, geometry }) => ({
+                        type: 'Feature',
+                        geometry,
+                        properties: {
+                            region_id: region.region_id,
+                            name: region.name,
+                            color: this.colorFor(region, remainingDepth),
+                        },
+                    })),
             };
         },
 
@@ -1718,12 +1780,18 @@ function predictionMap() {
             this.renderCurrentLevel();
         },
 
-        // 主圖 canvas.toDataURL() 只截得到主地圖——金門/馬祖 inset(含巢狀框)是各自獨立的
-        // MapLibre 實例/canvas，不會自動出現在主圖的截圖裡。改成把每個 inset 的畫面、外框、
-        // 標籤依它們在畫面上相對 #map 的實際位置，合成進同一張 offscreen canvas 再輸出，
-        // 匯出的圖片才會跟畫面上看到的一致。
-        async exportImage() {
-            if (this.status !== 'ready' || ! this.map) return;
+        /**
+         * 主圖 canvas.toDataURL() 只截得到主地圖——金門/馬祖 inset(含巢狀框)是各自獨立的
+         * MapLibre 實例/canvas，不會自動出現在主圖的截圖裡。改成把每個 inset 的畫面、外框、
+         * 標籤依它們在畫面上相對 #map 的實際位置，合成進同一張 offscreen canvas 再輸出，
+         * 匯出的圖片才會跟畫面上看到的一致。
+         *
+         * exportImage()（下載）跟 shareImage()（分享，見該函式註解）共用這段合成邏輯，
+         * 只有拿到 canvas 之後要做什麼不同，回傳 null 代表這次呼叫該放棄（未就緒或下載/
+         * 分享途中選舉被切換，見下方註解），呼叫端看到 null 直接 return。
+         */
+        async composeExportCanvas() {
+            if (this.status !== 'ready' || ! this.map) return null;
 
             // 下載中使用者若切換了屆別，loadElection() 會遞增 _loadSeq、換掉 this.map——
             // 這次下載已經對不上畫面正在顯示的選舉，不能繼續產出圖片（會產出另一場選舉
@@ -1736,7 +1804,7 @@ function predictionMap() {
                 map.triggerRepaint();
             })));
 
-            if (seq !== this._loadSeq || ! this.map) return;
+            if (seq !== this._loadSeq || ! this.map) return null;
 
             const mapRect = document.getElementById('map').getBoundingClientRect();
             const dpr = window.devicePixelRatio || 1;
@@ -1822,10 +1890,117 @@ function predictionMap() {
                 ctx.fillText(`其餘 ${hiddenLegendCount} 項未列出`, 12 * dpr, legendY + 2 * dpr);
             }
 
+            return offscreen;
+        },
+
+        exportFileName() {
+            return `${this.election?.name ?? 'prediction-map'}.png`;
+        },
+
+        downloadCanvas(canvas, filename) {
             const link = document.createElement('a');
-            link.download = `${this.election?.name ?? 'prediction-map'}.png`;
-            link.href = offscreen.toDataURL('image/png');
+            link.download = filename;
+            link.href = canvas.toDataURL('image/png');
             link.click();
+        },
+
+        /** 見 shareStatus 宣告處的註解：分享/複製/下載這幾個動作本身都沒有明顯畫面變化。 */
+        flashShareStatus(message) {
+            this.shareStatus = message;
+            clearTimeout(this._shareStatusTimer);
+            this._shareStatusTimer = setTimeout(() => { this.shareStatus = ''; }, 4000);
+        },
+
+        async exportImage() {
+            const canvas = await this.composeExportCanvas();
+
+            if (! canvas) return;
+
+            this.downloadCanvas(canvas, this.exportFileName());
+        },
+
+        /**
+         * 「分享」跟「下載圖片」用同一張合成好的圖，差在最後怎麼交給使用者：支援檔案分享
+         * 的瀏覽器（主要是手機版 Safari/Chrome）叫出系統原生分享選單，可以直接分享到
+         * IG/Line/Threads 等 App；不支援的瀏覽器（多半是桌面版，見 copyImageToClipboard()
+         * 這個桌面版比較實用的替代方案）退回跟「下載圖片」一樣的行為。
+         *
+         * navigator.canShare({ files }) 才是真的檢查「這個瀏覽器支援分享檔案」——
+         * navigator.share 存在不代表支援分享檔案（部分瀏覽器只支援分享文字/連結），
+         * 兩者都要拿到實際的 File 之後才能檢查，不能只靠 typeof navigator.share 判斷。
+         */
+        async shareImage() {
+            const canvas = await this.composeExportCanvas();
+
+            if (! canvas) return;
+
+            const filename = this.exportFileName();
+            const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+
+            if (! blob) {
+                this.downloadCanvas(canvas, filename);
+                this.flashShareStatus('無法產生圖片，已改為下載');
+                return;
+            }
+
+            const file = new File([blob], filename, { type: 'image/png' });
+
+            if (! navigator.canShare?.({ files: [file] })) {
+                this.downloadCanvas(canvas, filename);
+                this.flashShareStatus('此瀏覽器不支援分享，已改為下載圖片');
+                return;
+            }
+
+            try {
+                await navigator.share({ files: [file], title: this.election?.name ?? '台灣選舉地圖' });
+            } catch (e) {
+                // 使用者自己在系統分享選單按取消是正常操作（AbortError），不是失敗，不用
+                // 額外處理（也不提示，使用者自己取消不需要被告知）；其他真的失敗的情況
+                // （例如系統分享功能本身出錯）才退回下載，讓使用者至少能拿到圖片。
+                if (e.name !== 'AbortError') {
+                    this.downloadCanvas(canvas, filename);
+                    this.flashShareStatus('分享失敗，已改為下載圖片');
+                }
+            }
+        },
+
+        /**
+         * 桌面瀏覽器目前幾乎不支援 navigator.share 分享檔案（見 shareImage() 註解），
+         * 複製圖片到剪貼簿是桌面版比較實際能用的做法——貼到 Twitter/Facebook/LINE/
+         * Discord 等平台的發文框大多能直接貼上圖片，不用先存檔再手動選檔上傳。
+         * ClipboardItem 建構子跟 navigator.clipboard.write() 都要存在才真的支援
+         * （部分瀏覽器只有讀取剪貼簿的 API，沒有寫入圖片的能力）。
+         */
+        async copyImageToClipboard() {
+            const canvas = await this.composeExportCanvas();
+
+            if (! canvas) return;
+
+            const filename = this.exportFileName();
+
+            if (typeof ClipboardItem === 'undefined' || ! navigator.clipboard?.write) {
+                this.downloadCanvas(canvas, filename);
+                this.flashShareStatus('此瀏覽器不支援複製圖片，已改為下載');
+                return;
+            }
+
+            const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+
+            if (! blob) {
+                this.downloadCanvas(canvas, filename);
+                this.flashShareStatus('無法產生圖片，已改為下載');
+                return;
+            }
+
+            try {
+                await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+                this.flashShareStatus('已複製圖片，可以直接貼到貼文框');
+            } catch (e) {
+                // 常見失敗原因是使用者拒絕剪貼簿權限，跟 shareImage() 的其他失敗情況一樣
+                // 退回下載，讓使用者至少能拿到圖片。
+                this.downloadCanvas(canvas, filename);
+                this.flashShareStatus('複製失敗，已改為下載圖片');
+            }
         },
     };
 }
@@ -1897,6 +2072,8 @@ function drillDownMap() {
         election: null,
         candidates: [],
         rootRegions: [],
+        // 見 predictionMap() 同一個欄位的註解。
+        geometryStore: null,
         path: [],
         insetMaps: [],
         hoveredRegion: null,
@@ -1984,10 +2161,14 @@ function drillDownMap() {
         async loadElection(id) {
             id = Number(id);
             const hash = this.elections.find((e) => e.id === id)?.content_hash;
-            const data = await loadElectionOrHandleError(this, drillDownDataUrl(id, hash), 'drilldown', SCHEMA_VERSION_DRILLDOWN);
+            const [data, geometryStore] = await Promise.all([
+                loadElectionOrHandleError(this, drillDownDataUrl(id, hash), 'drilldown', SCHEMA_VERSION_DRILLDOWN),
+                fetchGeometries(),
+            ]);
 
             if (! data) return;
 
+            this.geometryStore = geometryStore;
             this.selectedElectionId = id;
             this.election = data.election;
             this.candidates = data.candidates;
@@ -2026,7 +2207,7 @@ function drillDownMap() {
             let offsetX = 12;
 
             for (const { label, names } of DRILLDOWN_INSET_GROUPS) {
-                const regions = this.currentRegions.filter((r) => names.some((n) => r.name.startsWith(n)) && r.geometry);
+                const regions = this.currentRegions.filter((r) => names.some((n) => r.name.startsWith(n)) && geometryFor(r, this.geometryStore));
 
                 if (! regions.length) continue;
 
@@ -2084,9 +2265,11 @@ function drillDownMap() {
                 // （見 DECISIONS.md），才浮現這個先前一直沒被觸發到的既有缺口：多筆行政區
                 // 各自的 MultiPolygon 攤平成同一組多邊形，一樣用 clusterParts() 只對焦到
                 // 「總面積最大那一群」，不分「整個縣一筆」還是「好幾個獨立行政區」兩種情況。
-                const polygons = regions.flatMap((r) => (
-                    r.geometry.type === 'MultiPolygon' ? r.geometry.coordinates : [r.geometry.coordinates]
-                ));
+                const polygons = regions.flatMap((r) => {
+                    const geometry = geometryFor(r, this.geometryStore);
+
+                    return geometry.type === 'MultiPolygon' ? geometry.coordinates : [geometry.coordinates];
+                });
                 const bbox = clusterParts({ type: 'MultiPolygon', coordinates: polygons })[0].bbox;
 
                 map.jumpTo(cameraForBounds(bbox, INSET_BOX_SIZE, 16));
@@ -2099,17 +2282,19 @@ function drillDownMap() {
         featureCollectionFor(regions) {
             return {
                 type: 'FeatureCollection',
-                // 少數行政區的 geometry 是 null（regions.boundary 上游資料缺口，見
+                // 少數行政區沒有幾何資料（regions.boundary 上游資料缺口，見
                 // CLAUDE.md「地圖上看到白色色塊」已知限制），過濾掉不畫，不是 bug。
-                features: regions.filter((r) => r.geometry).map((region) => ({
-                    type: 'Feature',
-                    geometry: region.geometry,
-                    properties: {
-                        region_id: region.region_id,
-                        name: region.name,
-                        color: this.colorFor(region),
-                    },
-                })),
+                features: regions.map((region) => ({ region, geometry: geometryFor(region, this.geometryStore) }))
+                    .filter(({ geometry }) => geometry)
+                    .map(({ region, geometry }) => ({
+                        type: 'Feature',
+                        geometry,
+                        properties: {
+                            region_id: region.region_id,
+                            name: region.name,
+                            color: this.colorFor(region),
+                        },
+                    })),
             };
         },
 
@@ -2318,6 +2503,8 @@ function districtMap() {
         insetMaps: [],
         election: null,
         districts: [],
+        // 見 predictionMap() 同一個欄位的註解。
+        geometryStore: null,
         hoveredDistrict: null,
         tooltipPos: { x: 0, y: 0 },
         selectedDistrict: null,
@@ -2387,10 +2574,14 @@ function districtMap() {
         async loadElection(id) {
             id = Number(id);
             const hash = this.elections.find((e) => e.id === id)?.content_hash;
-            const data = await loadElectionOrHandleError(this, districtMapDataUrl(id, hash), 'district-map', SCHEMA_VERSION_DISTRICT_MAP);
+            const [data, geometryStore] = await Promise.all([
+                loadElectionOrHandleError(this, districtMapDataUrl(id, hash), 'district-map', SCHEMA_VERSION_DISTRICT_MAP),
+                fetchGeometries(),
+            ]);
 
             if (! data) return;
 
+            this.geometryStore = geometryStore;
             this.selectedElectionId = id;
             this.selectedDistrict = null;
             this.hoveredDistrict = null;
@@ -2473,15 +2664,17 @@ function districtMap() {
         featureCollectionFor(districts) {
             return {
                 type: 'FeatureCollection',
-                features: districts.filter((d) => d.geometry).map((district) => ({
-                    type: 'Feature',
-                    geometry: district.geometry,
-                    properties: {
-                        district_id: district.district_id,
-                        name: district.name,
-                        color: shareToFillColor(district.color, (district.party_seats[0]?.seats ?? 0) / district.total_seats),
-                    },
-                })),
+                features: districts.map((district) => ({ district, geometry: geometryFor(district, this.geometryStore) }))
+                    .filter(({ geometry }) => geometry)
+                    .map(({ district, geometry }) => ({
+                        type: 'Feature',
+                        geometry,
+                        properties: {
+                            district_id: district.district_id,
+                            name: district.name,
+                            color: shareToFillColor(district.color, (district.party_seats[0]?.seats ?? 0) / district.total_seats),
+                        },
+                    })),
             };
         },
 
@@ -2566,11 +2759,14 @@ if (typeof module !== 'undefined' && module.exports) {
         loadCurrentLyParties,
         fetchElectionData,
         loadElectionOrHandleError,
+        geometryFor,
+        fetchGeometries,
         deepFreeze,
         electionDataCache,
         ELECTION_DATA_CACHE_LIMIT,
         readStoredTheme,
         SCHEMA_VERSION_DRILLDOWN,
         SCHEMA_VERSION_DISTRICT_MAP,
+        SCHEMA_VERSION_GEOMETRIES,
     };
 }

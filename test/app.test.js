@@ -569,13 +569,21 @@ describe('cloneRegionTree', () => {
         assert.equal(cloned[0].children[0].assigned_candidacy_id, 888);
     });
 
-    test('large fields like geometry keep the same reference (not deep-cloned)', () => {
-        const geometry = { type: 'Polygon', coordinates: [] };
-        const original = [{ region_id: 1, name: '甲縣', geometry, children: null }];
+    test('large fields like results keep the same reference (not deep-cloned)', () => {
+        const results = [{ candidacy_id: 1, votes: 100 }];
+        const original = [{ region_id: 1, name: '甲縣', results, children: null }];
 
         const cloned = app.cloneRegionTree(original);
 
-        assert.equal(cloned[0].geometry, geometry);
+        assert.equal(cloned[0].results, results);
+    });
+
+    test('geometry_hash (幾何去重參照，見 geometryFor()) is copied through untouched', () => {
+        const original = [{ region_id: 1, name: '甲縣', geometry_hash: 'abc123', children: null }];
+
+        const cloned = app.cloneRegionTree(original);
+
+        assert.equal(cloned[0].geometry_hash, 'abc123');
     });
 
     test('still produces a mutable clone when the source tree is deep-frozen (Stage 4 item 3: read-only cache contract)', () => {
@@ -631,6 +639,57 @@ describe('deepFreeze (第四階段第 3 項：electionDataCache 的原始資料�
 
 // LOAD-11: 政黨資料首次載入失敗後，不能把失敗結果永久當成「查無政黨」快取住，下次呼叫
 // 要能重新 fetch 並恢復清單。
+describe('geometryFor (幾何去重：resolve geometry_hash 回實際 GeoJSON geometry)', () => {
+    const store = new Map([
+        ['hash-a', { type: 'Polygon', coordinates: [[[0, 0]]] }],
+        ['hash-b', { type: 'MultiPolygon', coordinates: [] }],
+    ]);
+
+    test('returns the geometry the hash resolves to', () => {
+        assert.deepEqual(app.geometryFor({ geometry_hash: 'hash-a' }, store), { type: 'Polygon', coordinates: [[[0, 0]]] });
+    });
+
+    test('returns null when geometry_hash is null (known data gap, see CLAUDE.md)', () => {
+        assert.equal(app.geometryFor({ geometry_hash: null }, store), null);
+    });
+
+    test('returns null when the hash is not found in the store instead of throwing', () => {
+        assert.equal(app.geometryFor({ geometry_hash: 'missing' }, store), null);
+    });
+});
+
+describe('fetchGeometries (Stage: shared geometry store, fetched once per session)', () => {
+    let realFetch;
+
+    beforeEach(() => {
+        realFetch = globalThis.fetch;
+    });
+
+    afterEach(() => {
+        globalThis.fetch = realFetch;
+    });
+
+    test('parses the payload into a Map and only fetches once across repeated calls', async () => {
+        let fetchCallCount = 0;
+
+        globalThis.fetch = () => {
+            fetchCallCount += 1;
+
+            return Promise.resolve({
+                ok: true,
+                json: () => Promise.resolve({ schema_version: 1, geometries: { h1: { type: 'Polygon', coordinates: [] } } }),
+            });
+        };
+
+        const [store1, store2] = await Promise.all([app.fetchGeometries(), app.fetchGeometries()]);
+
+        assert.equal(fetchCallCount, 1);
+        assert.equal(store1, store2);
+        assert.ok(store1 instanceof Map);
+        assert.deepEqual(store1.get('h1'), { type: 'Polygon', coordinates: [] });
+    });
+});
+
 describe('fetchElectionData (Stage 4: shared in-flight requests + bounded LRU cache)', () => {
     let realFetch;
 

@@ -87,10 +87,13 @@ describe('drilldown fixture region tree', () => {
         assert.ok(names.includes('金門縣'), 'fixture should include 金門縣 for DRILLDOWN_INSET_GROUPS coverage');
     });
 
-    test('every region node has geometry, results and actual_winner_candidacy_id consistent with results[0]', () => {
+    test('every region node has a geometry_hash that resolves in geometries.json, plus results and actual_winner_candidacy_id consistent with results[0]', () => {
+        const geometries = readJson('geometries.json').geometries;
+
         const walk = (regions) => {
             for (const r of regions) {
-                assert.ok(r.geometry, `${r.name} missing geometry`);
+                assert.ok(r.geometry_hash, `${r.name} missing geometry_hash`);
+                assert.ok(geometries[r.geometry_hash], `${r.name}'s geometry_hash does not resolve in geometries.json`);
                 assert.ok(Array.isArray(r.results) && r.results.length > 0, `${r.name} missing results`);
                 assert.equal(r.actual_winner_candidacy_id, r.results[0].candidacy_id, `${r.name} actual_winner mismatch`);
 
@@ -99,6 +102,21 @@ describe('drilldown fixture region tree', () => {
         };
 
         walk(data.regions);
+    });
+});
+
+describe('geometries fixture (幾何去重共用表)', () => {
+    test('is a non-empty hash-keyed map of GeoJSON geometries', () => {
+        const { schema_version: schemaVersion, geometries } = readJson('geometries.json');
+
+        assert.equal(schemaVersion, app.SCHEMA_VERSION_GEOMETRIES ?? 1);
+        assert.ok(geometries && typeof geometries === 'object');
+        assert.ok(Object.keys(geometries).length > 0);
+
+        for (const [hash, geometry] of Object.entries(geometries)) {
+            assert.match(hash, /^[0-9a-f]{32}$/, `key "${hash}" doesn't look like an md5 hash`);
+            assert.ok(['Polygon', 'MultiPolygon'].includes(geometry.type), `geometry for ${hash} has unexpected type`);
+        }
     });
 });
 

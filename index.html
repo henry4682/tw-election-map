@@ -109,8 +109,21 @@
                         <button @click="resetToActual()">重設為實際結果</button>
                         <button @click="undoLastEdit()" :disabled="! lastEdit">復原上一步</button>
                         <button @click="exportImage()" :disabled="status !== 'ready'">下載圖片</button>
+                        <button
+                            x-show="typeof navigator.share === 'function'"
+                            x-cloak
+                            @click="shareImage()"
+                            :disabled="status !== 'ready'"
+                        >分享</button>
+                        <button
+                            x-show="typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write"
+                            x-cloak
+                            @click="copyImageToClipboard()"
+                            :disabled="status !== 'ready'"
+                        >複製圖片</button>
+                        <p class="hint" x-show="shareStatus" x-cloak x-text="shareStatus"></p>
                         <p class="hint">先點一下<span x-text="fillLevelLabel"></span>查看明細，已經選取時再點一次才會切換猜測候選人；顏色深淺代表該候選人的實際得票率，越深代表贏得越多</p>
-                        <p class="hint">下載圖片會附上選舉名稱、圖例，以及是否修改過預測的標示</p>
+                        <p class="hint">下載圖片會附上選舉名稱、圖例，以及是否修改過預測的標示；手機可以按「分享」直接分享到社群 App，電腦可以按「複製圖片」直接貼到發文框，不支援時都會改成下載圖片</p>
                         <details class="keyboard-region-list">
                             <summary>純鍵盤操作：<span x-text="fillLevelLabel"></span>清單（跟點地圖效果相同）</summary>
                             <ul>
