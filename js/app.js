@@ -275,9 +275,25 @@ const INSET_COUNTIES = [
     { countyName: '連江縣', label: '馬祖' },
 ];
 
-const INSET_BOX_SIZE = 140;
-const INSET_SUB_BOX_SIZE = 46;
-const INSET_GAP = 10;
+const INSET_BOX_SIZE_DESKTOP = 140;
+const INSET_BOX_SIZE_MOBILE = 84;
+const INSET_MOBILE_BREAKPOINT = 640;
+
+// 手機版螢幕窄，140px 見方的金門/馬祖小圖框太佔畫面（尤其橫向兩個框並排時），窄螢幕
+// 改用縮小版尺寸；子框（烏坵/東引這種遠方離島）跟間距照比例一起縮，不然縮小後主框裝
+// 不下子框。用 getter 而非固定常數是因為要吃「當下」的 innerWidth，不能在模組載入時
+// 就算死——使用者可能中途旋轉裝置或調整視窗。
+function insetBoxSize() {
+    return window.innerWidth < INSET_MOBILE_BREAKPOINT ? INSET_BOX_SIZE_MOBILE : INSET_BOX_SIZE_DESKTOP;
+}
+
+function insetSubBoxSize() {
+    return window.innerWidth < INSET_MOBILE_BREAKPOINT ? 30 : 46;
+}
+
+function insetGap() {
+    return window.innerWidth < INSET_MOBILE_BREAKPOINT ? 6 : 10;
+}
 
 // 鑽層地圖頂層行政區集合跟預測地圖一樣會混到金門/連江——差別是縣市長選舉頂層本身就是
 // 「金門縣/連江縣」這兩筆，鄉鎮市長/原住民區長選舉頂層則直接是底下個別鄉鎮（沒有縣市
@@ -878,6 +894,34 @@ function summarizePredictionState(regions, candidates) {
     visit(regions);
 
     return { legend: [...legendByKey.values()], hasEdits };
+}
+
+/**
+ * 匯出圖片左上角標題用：算「頂層每個行政區（縣市/選區）目前顏色對應哪個政黨」的政黨
+ * 拿下數量，由多到少排序。只看頂層（regions 本身，不遞迴 children）——這是總統/縣市長
+ * 這種單一當選人地圖，頂層每個節點恰好對應一個縣市，數縣市數才有意義；議員/代表這種
+ * 多席次地圖不會用到這個函式（見 districtMap() 自己的 party_seats 統計）。
+ * @param {RegionNode[]} regions
+ * @param {Candidate[]} candidates
+ * @returns {{partyName: string, color: string, count: number}[]}
+ */
+function partyLeadCountsFor(regions, candidates) {
+    const counts = new Map();
+
+    for (const node of regions) {
+        const partyName = node.assigned_party
+            ? node.assigned_party.party_name
+            : (partyNameFrom(candidates, node.assigned_candidacy_id) ?? '無黨籍/其他');
+        const color = node.assigned_party
+            ? node.assigned_party.color
+            : candidateColorFrom(candidates, node.assigned_candidacy_id);
+
+        const entry = counts.get(partyName) ?? { partyName, color, count: 0 };
+        entry.count += 1;
+        counts.set(partyName, entry);
+    }
+
+    return [...counts.values()].sort((a, b) => b.count - a.count);
 }
 
 const MERCATOR_TILE_SIZE = 512;
@@ -1502,6 +1546,9 @@ function predictionMap() {
             if (this.drillPath.length || this.displayLevelIndex !== 0 || this.selectedRootId) return;
 
             const mapEl = document.getElementById('map');
+            const boxSize = insetBoxSize();
+            const subBoxSize = insetSubBoxSize();
+            const gap = insetGap();
             let offsetX = 12;
 
             for (const { countyName, label } of INSET_COUNTIES) {
@@ -1511,20 +1558,20 @@ function predictionMap() {
 
                 const clusters = clusterParts(geometryFor(county, this.geometryStore));
 
-                const box = createInsetBox(mapEl, label, INSET_BOX_SIZE, offsetX, 12);
+                const box = createInsetBox(mapEl, label, boxSize, offsetX, 12);
                 this.mountInsetMap(box, county, clusters[0].bbox, 14, label);
 
                 // 主要陸地以外還有其他遠方離島群組（如金門的烏坵鄉），各自疊一個巢狀小框
                 // 在主框右下角，跟靜態 SVG 地圖的 inset_group() 是同一套概念。
-                let subOffsetY = INSET_BOX_SIZE - INSET_SUB_BOX_SIZE - 4;
+                let subOffsetY = boxSize - subBoxSize - 4;
 
                 for (let i = 1; i < clusters.length; i++) {
-                    const subBox = createInsetBox(box, '', INSET_SUB_BOX_SIZE, INSET_BOX_SIZE - INSET_SUB_BOX_SIZE - 4, subOffsetY, true);
+                    const subBox = createInsetBox(box, '', subBoxSize, boxSize - subBoxSize - 4, subOffsetY, true);
                     this.mountInsetMap(subBox, county, clusters[i].bbox, 6);
-                    subOffsetY -= INSET_SUB_BOX_SIZE + 4;
+                    subOffsetY -= subBoxSize + 4;
                 }
 
-                offsetX += INSET_BOX_SIZE + INSET_GAP;
+                offsetX += boxSize + gap;
             }
         },
 
@@ -1818,6 +1865,13 @@ function predictionMap() {
             // 頭尾各加一條文字/圖例色帶，主圖跟 inset 的合成邏輯不變，只是整體往下移
             // headerHeight 的量。
             const { legend, hasEdits } = summarizePredictionState(this.regionTree, this.candidates);
+            const unitLabel = this.levels[0]?.label ?? '';
+            const leadCounts = partyLeadCountsFor(this.regionTree, this.candidates);
+            const MAX_TITLE_PARTIES = 3;
+            const titleHiddenCount = leadCounts.length - MAX_TITLE_PARTIES;
+            const titleText = leadCounts.slice(0, MAX_TITLE_PARTIES)
+                .map((p) => `${p.partyName} ${p.count}${unitLabel}`)
+                .join('・') + (titleHiddenCount > 0 ? `・其餘 ${titleHiddenCount} 個政黨` : '');
             const headerHeight = 56 * dpr;
             const legendRowHeight = 20 * dpr;
             const legendPadding = 12 * dpr;
@@ -1839,7 +1893,7 @@ function predictionMap() {
             ctx.fillStyle = '#242320';
             ctx.textBaseline = 'top';
             ctx.font = `bold ${16 * dpr}px system-ui, sans-serif`;
-            ctx.fillText(this.election?.name ?? '（未知選舉）', 12 * dpr, 8 * dpr);
+            ctx.fillText(titleText || (this.election?.name ?? '（未知選舉）'), 12 * dpr, 8 * dpr);
             ctx.font = `${11 * dpr}px system-ui, sans-serif`;
             ctx.fillStyle = '#52514e';
             ctx.fillText(
@@ -2207,6 +2261,7 @@ function drillDownMap() {
             if (this.path.length) return;
 
             const mapEl = document.getElementById('drilldown-map');
+            const boxSize = insetBoxSize();
             let offsetX = 12;
 
             for (const { label, names } of DRILLDOWN_INSET_GROUPS) {
@@ -2214,13 +2269,13 @@ function drillDownMap() {
 
                 if (! regions.length) continue;
 
-                const box = createInsetBox(mapEl, label, INSET_BOX_SIZE, offsetX, 12);
-                this.mountInsetMap(box, regions);
-                offsetX += INSET_BOX_SIZE + INSET_GAP;
+                const box = createInsetBox(mapEl, label, boxSize, offsetX, 12);
+                this.mountInsetMap(box, regions, boxSize);
+                offsetX += boxSize + insetGap();
             }
         },
 
-        mountInsetMap(container, regions) {
+        mountInsetMap(container, regions, boxSize = INSET_BOX_SIZE_DESKTOP) {
             const map = new maplibregl.Map({
                 container,
                 style: { version: 8, sources: {}, layers: [] },
@@ -2275,7 +2330,7 @@ function drillDownMap() {
                 });
                 const bbox = clusterParts({ type: 'MultiPolygon', coordinates: polygons })[0].bbox;
 
-                map.jumpTo(cameraForBounds(bbox, INSET_BOX_SIZE, 16));
+                map.jumpTo(cameraForBounds(bbox, boxSize, 16));
                 this.wireInteractions(map, 'inset-regions-fill');
             });
 
@@ -2603,6 +2658,7 @@ function districtMap() {
 
         initInsetMaps() {
             const mapEl = document.getElementById('district-map');
+            const boxSize = insetBoxSize();
             let offsetX = 12;
 
             for (const { label, names } of DRILLDOWN_INSET_GROUPS) {
@@ -2610,13 +2666,13 @@ function districtMap() {
 
                 if (! districts.length) continue;
 
-                const box = createInsetBox(mapEl, label, INSET_BOX_SIZE, offsetX, 12);
-                this.mountInsetMap(box, districts);
-                offsetX += INSET_BOX_SIZE + INSET_GAP;
+                const box = createInsetBox(mapEl, label, boxSize, offsetX, 12);
+                this.mountInsetMap(box, districts, boxSize);
+                offsetX += boxSize + insetGap();
             }
         },
 
-        mountInsetMap(container, districts) {
+        mountInsetMap(container, districts, boxSize = INSET_BOX_SIZE_DESKTOP) {
             const map = new maplibregl.Map({
                 container,
                 style: { version: 8, sources: {}, layers: [] },
@@ -2651,7 +2707,7 @@ function districtMap() {
                 // 金門/連江在這個模式下一律是好幾個各自獨立的選區 feature（T1 是縣底下
                 // 2~4 個選區、R1 是好幾個鄉鎮各自的選區），不會是單一 MultiPolygon，直接
                 // 對整組取聯集框即可，跟 drillDownMap() 的鄉鎮市長頂層同一種情況。
-                map.jumpTo(cameraForBounds(unionBBox(data.features), INSET_BOX_SIZE, 16));
+                map.jumpTo(cameraForBounds(unionBBox(data.features), boxSize, 16));
                 this.wireInteractions(map, 'inset-districts-fill');
             });
 
