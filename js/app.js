@@ -1622,6 +1622,13 @@ function predictionMap() {
             map.on('click', layerId, (e) => this.onRegionClick(e));
             map.on('mousemove', layerId, (e) => this.onRegionHover(e));
             map.on('mouseleave', layerId, () => { this.hoveredRegion = null; });
+
+            // 手機沒有滑鼠、不會觸發 mouseleave：一根手指點下去 MapLibre 會合成一次
+            // mousemove（設定 hoveredRegion、跳出 tooltip），但手指放開後沒有對應的
+            // 「滑出」事件，tooltip 會卡在畫面上蓋住地圖，直到下次點別的地方才會換掉
+            // （不會自己消失）。touchend/touchcancel 直接清掉 hoveredRegion 解決。
+            map.on('touchend', layerId, () => { this.hoveredRegion = null; });
+            map.on('touchcancel', layerId, () => { this.hoveredRegion = null; });
         },
 
         /**
@@ -2250,6 +2257,11 @@ function drillDownMap() {
             map.on('click', layerId, (e) => this.onRegionClick(e));
             map.on('mousemove', layerId, (e) => this.onRegionHover(e));
             map.on('mouseleave', layerId, () => { this.hoveredRegion = null; });
+
+            // 見 predictionMap() wireInteractions() 同一段註解：手機沒有 mouseleave，
+            // 不清掉的話點過的行政區 tooltip 會卡在畫面上蓋住地圖。
+            map.on('touchend', layerId, () => { this.hoveredRegion = null; });
+            map.on('touchcancel', layerId, () => { this.hoveredRegion = null; });
         },
 
         /**
@@ -2718,6 +2730,11 @@ function districtMap() {
             map.on('click', layerId, (e) => this.onDistrictClick(e));
             map.on('mousemove', layerId, (e) => this.onDistrictHover(e));
             map.on('mouseleave', layerId, () => { this.hoveredDistrict = null; });
+
+            // 見 predictionMap() wireInteractions() 同一段註解：手機沒有 mouseleave，
+            // 不清掉的話點過的選區 tooltip 會卡在畫面上蓋住地圖。
+            map.on('touchend', layerId, () => { this.hoveredDistrict = null; });
+            map.on('touchcancel', layerId, () => { this.hoveredDistrict = null; });
         },
 
         featureCollectionFor(districts) {
