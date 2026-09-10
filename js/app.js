@@ -210,6 +210,15 @@ function fetchGeometries() {
             deepFreeze(payload);
 
             return store;
+        }).catch((e) => {
+            // 失敗（常見是手機網路不穩，這份表壓縮後 8MB+，比其他檔案更容易在弱網路
+            // 中斷）不能把 rejected promise 留在 geometriesPromise 快取裡——不重設的話
+            // 這個模組變數活多久、之後所有 loadElection() 呼叫 fetchGeometries() 拿到
+            // 的都是同一個永遠 reject 的 promise，使用者重新整理選舉清單、切換屆別都
+            // 救不回來，畫面卡死在「載入中」。重設成 null 讓下一次呼叫重新發request。
+            geometriesPromise = null;
+
+            throw e;
         });
     }
 
@@ -1464,10 +1473,27 @@ function predictionMap() {
         async loadElection(id) {
             id = Number(id);
             const hash = this.elections.find((e) => e.id === id)?.content_hash;
-            const [data, geometryStore] = await Promise.all([
-                loadElectionOrHandleError(this, drillDownDataUrl(id, hash), 'drilldown', SCHEMA_VERSION_DRILLDOWN),
-                fetchGeometries(),
-            ]);
+
+            // loadElectionOrHandleError() 自己的失敗會內部處理（status='error' 或
+            // switchError），不會讓 Promise.all reject；能讓這裡 reject 的只有
+            // fetchGeometries()（見該函式註解：常見是幾何共用表在弱網路中斷）——沒有
+            // 這層 try/catch 的話，畫面會永遠卡在「載入中」轉圈圈，因為底下沒有任何
+            // 程式碼會把 status 改成別的值。
+            let data, geometryStore;
+            try {
+                [data, geometryStore] = await Promise.all([
+                    loadElectionOrHandleError(this, drillDownDataUrl(id, hash), 'drilldown', SCHEMA_VERSION_DRILLDOWN),
+                    fetchGeometries(),
+                ]);
+            } catch (e) {
+                if (this.election) {
+                    this.switchError = `切換失敗，目前仍顯示「${this.election.name}」的結果。`;
+                } else {
+                    this.status = 'error';
+                    this.errorMessage = '地圖幾何資料載入失敗，請檢查網路連線後重試。';
+                }
+                return;
+            }
 
             if (! data) return;
 
@@ -2236,10 +2262,24 @@ function drillDownMap() {
         async loadElection(id) {
             id = Number(id);
             const hash = this.elections.find((e) => e.id === id)?.content_hash;
-            const [data, geometryStore] = await Promise.all([
-                loadElectionOrHandleError(this, drillDownDataUrl(id, hash), 'drilldown', SCHEMA_VERSION_DRILLDOWN),
-                fetchGeometries(),
-            ]);
+
+            // 見 predictionMap() loadElection() 同一段註解：fetchGeometries() 失敗要
+            // 自己接住，不然畫面會永遠卡在「載入中」。
+            let data, geometryStore;
+            try {
+                [data, geometryStore] = await Promise.all([
+                    loadElectionOrHandleError(this, drillDownDataUrl(id, hash), 'drilldown', SCHEMA_VERSION_DRILLDOWN),
+                    fetchGeometries(),
+                ]);
+            } catch (e) {
+                if (this.election) {
+                    this.switchError = `切換失敗，目前仍顯示「${this.election.name}」的結果。`;
+                } else {
+                    this.status = 'error';
+                    this.errorMessage = '地圖幾何資料載入失敗，請檢查網路連線後重試。';
+                }
+                return;
+            }
 
             if (! data) return;
 
@@ -2659,10 +2699,24 @@ function districtMap() {
         async loadElection(id) {
             id = Number(id);
             const hash = this.elections.find((e) => e.id === id)?.content_hash;
-            const [data, geometryStore] = await Promise.all([
-                loadElectionOrHandleError(this, districtMapDataUrl(id, hash), 'district-map', SCHEMA_VERSION_DISTRICT_MAP),
-                fetchGeometries(),
-            ]);
+
+            // 見 predictionMap() loadElection() 同一段註解：fetchGeometries() 失敗要
+            // 自己接住，不然畫面會永遠卡在「載入中」。
+            let data, geometryStore;
+            try {
+                [data, geometryStore] = await Promise.all([
+                    loadElectionOrHandleError(this, districtMapDataUrl(id, hash), 'district-map', SCHEMA_VERSION_DISTRICT_MAP),
+                    fetchGeometries(),
+                ]);
+            } catch (e) {
+                if (this.election) {
+                    this.switchError = `切換失敗，目前仍顯示「${this.election.name}」的結果。`;
+                } else {
+                    this.status = 'error';
+                    this.errorMessage = '地圖幾何資料載入失敗，請檢查網路連線後重試。';
+                }
+                return;
+            }
 
             if (! data) return;
 
