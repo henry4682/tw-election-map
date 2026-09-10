@@ -436,6 +436,7 @@
                                     <span x-text="c.label"></span>
                                     <span x-show="c.is_elected"> ✓當選</span>
                                     <span x-show="c.is_incumbent"> ・現任</span>
+                                    <span x-show="c.flipped" title="跟上一屆同類型選舉的同一選區相比，當選人換人了（只比對候選人身份，不比對政黨）"> ・換人當選</span>
                                     <strong x-text="c.votes.toLocaleString()"></strong> 票
                                     <span class="pct" x-text="`(${votePct(c, selectedDistrict)}%)`"></span>
                                 </li>

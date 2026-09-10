@@ -47,9 +47,10 @@
  * @property {string} color
  * @property {number} total_seats
  * @property {{party_name: string|null, color: string, seats: number}[]} party_seats
- * @property {(Candidate & {votes: number, is_elected: boolean, is_incumbent: boolean|null})[]} candidates
- *   - is_incumbent 是 null 代表這筆候選資格是在後端 candidacies.is_incumbent 欄位
- *     補上之前匯入的，不是「確定不是現任」，畫面上不要顯示成「非現任」。
+ * @property {(Candidate & {votes: number, is_elected: boolean, is_incumbent: boolean|null, flipped: boolean|null})[]} candidates
+ *   - is_incumbent/flipped 是 null 代表這筆候選資格是在後端補上這兩個欄位之前匯入的，
+ *     或（flipped）找不到可比對的上一屆同類型選舉，都不是「確定不是現任/沒換人」，
+ *     畫面上不要顯示成負面結果。
  */
 
 // 各 index entry 都帶 content_hash（見對應的 election:export-* 指令 rebuildIndex()），

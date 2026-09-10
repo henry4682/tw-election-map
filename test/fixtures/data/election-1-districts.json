@@ -27,7 +27,8 @@
           "color": "#1b9431",
           "votes": 5000,
           "is_elected": true,
-          "is_incumbent": true
+          "is_incumbent": true,
+          "flipped": false
         },
         {
           "candidacy_id": 202,
@@ -36,7 +37,8 @@
           "color": "#000099",
           "votes": 3000,
           "is_elected": false,
-          "is_incumbent": false
+          "is_incumbent": false,
+          "flipped": null
         }
       ],
       "geometry_hash": "9fb07522f6955b88afec78abf99b681c"
@@ -62,7 +64,8 @@
           "color": "#000099",
           "votes": 2000,
           "is_elected": true,
-          "is_incumbent": true
+          "is_incumbent": false,
+          "flipped": true
         }
       ],
       "geometry_hash": "6b441ea60576496bf219ed3591f8a983"

@@ -521,6 +521,26 @@ test.describe('incumbent/elected badges in district mode candidate list', () => 
         await expect(items.nth(0).getByText('・現任')).toBeVisible();
         await expect(items.nth(1).getByText('✓當選')).toBeHidden();
         await expect(items.nth(1).getByText('・現任')).toBeHidden();
+
+        // 甲縣第01選區的當選人 flipped:false（蟬聯），不顯示「・換人當選」。
+        await expect(items.nth(0).getByText('・換人當選')).toBeHidden();
+    });
+
+    test('shows ・換人當選 only for a winner whose seat flipped (flipped:true), not for null/false', async ({ page }) => {
+        await page.goto('/');
+        await page.locator('nav.mode-toggle button', { hasText: '議員/代表選區地圖' }).click();
+        await waitMapReady(page, 'district-map');
+
+        const view = page.locator('.view[x-show*="district"]');
+        await view.getByText('純鍵盤操作：選區清單').click();
+        // 金門縣選舉區的當選人（乙黨 陳小美）fixture 裡 flipped:true、is_incumbent:false。
+        await view.getByRole('button', { name: '金門縣選舉區' }).click();
+
+        const items = view.locator('.panel-heading ~ ul li');
+        await expect(items).toHaveCount(1);
+        await expect(items.nth(0).getByText('✓當選')).toBeVisible();
+        await expect(items.nth(0).getByText('・換人當選')).toBeVisible();
+        await expect(items.nth(0).getByText('・現任')).toBeHidden();
     });
 });
 
