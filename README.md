@@ -97,7 +97,8 @@ GitHub Pages 與 Cloudflare Workers 兩個部署版本目前並存，並各自�
 地圖上顯示的資料本身不是本專案原創產出，來源如下：
 
 - **選舉開票資料**：[中央選舉委員會（CEC）選舉資料庫](https://data.cec.gov.tw/) 公開的歷屆選舉原始資料（`votedata.zip`），屬政府公開資料，依中選會網站公告的開放資料授權條款使用；本專案僅做資料整理、彙總與視覺化呈現，未變更原始得票數字。
-- **行政區界圖資（GeoJSON）**：來源為內政部國土測繪中心村里界圖，經 [dkaoster/taiwan-atlas](https://github.com/dkaoster/taiwan-atlas) 專案轉製後取用；使用條款請參照該專案本身標示的授權。
+- **行政區界圖資（GeoJSON）**：主要來源為內政部國土測繪中心村里界圖，經 [dkaoster/taiwan-atlas](https://github.com/dkaoster/taiwan-atlas) 專案轉製後取用；使用條款請參照該專案本身標示的授權。
+- **部分村里界線補值**：taiwan-atlas 沒有涵蓋到的少數村里，改用內政部「社會經濟資料服務平台」（[SEGIS](https://segis.moi.gov.tw/)）發布的歷史村里界圖資快照補齊，同屬政府公開資料。
 
 如對資料授權範圍或引用方式有疑慮，請以中選會、內政部國土測繪中心及 taiwan-atlas 專案各自公告的條款為準；本說明僅供快速理解來源，不構成法律意見。
 
