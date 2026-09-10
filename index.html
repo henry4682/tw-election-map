@@ -121,7 +121,7 @@
                             :disabled="status !== 'ready'"
                         >分享</button>
                         <button
-                            x-show="typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write"
+                            x-show="typeof ClipboardItem !== 'undefined' && !!navigator.clipboard?.write"
                             x-cloak
                             @click="copyImageToClipboard()"
                             :disabled="status !== 'ready'"
