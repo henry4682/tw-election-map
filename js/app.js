@@ -1329,6 +1329,13 @@ function predictionMap() {
         async start() {
             this.status = 'loading';
 
+            // 幾何共用表（geometries.json，見 fetchGeometries() 註解）現在是壓縮後
+            // 8MB+ 的固定成本，loadElection() 才第一次呼叫的話，會排在選舉清單/
+            // 現任立院政黨這兩個小檔案的序列 await 之後才開始下載，拖長第一次進畫面
+            // 的時間。這裡先觸發（不 await），讓它跟後面的請求並行下載，loadElection()
+            // 裡的 fetchGeometries() 會拿到同一個已經在跑的 promise。
+            fetchGeometries().catch(() => {});
+
             const partiesResult = await loadCurrentLyParties();
             this.currentLyParties = partiesResult.parties;
             this.loadCustomPartiesFromStorage();
@@ -2197,6 +2204,10 @@ function drillDownMap() {
         async start() {
             this.status = 'loading';
 
+            // 見 predictionMap() start() 同一段註解：先觸發（不 await）幾何共用表的
+            // 下載，讓它跟選舉清單請求並行，不要排在後面才開始。
+            fetchGeometries().catch(() => {});
+
             try {
                 this.elections = await fetchJsonOrThrow(DRILLDOWN_INDEX_URL);
             } catch (e) {
@@ -2619,6 +2630,10 @@ function districtMap() {
 
         async start() {
             this.status = 'loading';
+
+            // 見 predictionMap() start() 同一段註解：先觸發（不 await）幾何共用表的
+            // 下載，讓它跟選舉清單請求並行，不要排在後面才開始。
+            fetchGeometries().catch(() => {});
 
             try {
                 this.elections = await fetchJsonOrThrow(DISTRICT_MAP_INDEX_URL);
