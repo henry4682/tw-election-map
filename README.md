@@ -79,11 +79,6 @@ npm test
 
 `data/` 約 600MB，主要由村里層級 GeoJSON 與歷屆選舉資料構成。由於資料更新頻率低，目前直接納入 repository 並隨 GitHub Pages 部署；若未來更新頻率提高，再考慮改為外部儲存或自動化發布流程。
 
-主專案另外也部署於 Cloudflare Workers Static Assets：
-https://tw-election-map.henry194557.workers.dev/
-
-GitHub Pages 與 Cloudflare Workers 兩個部署版本目前並存，並各自獨立更新。
-
 ## 資料更新
 
 資料由後端的 `election:export-*` 系列指令產生，這裡只是同步過來的靜態拷貝：
