@@ -108,3 +108,4 @@ GitHub Pages 與 Cloudflare Workers 兩個部署版本目前並存，並各自�
 
 - 前端架構設計參考 [jacksonjude/USA-Election-Map](https://github.com/jacksonjude/USA-Election-Map)——同樣是純靜態頁面、資料預先匯出成檔案、瀏覽器端解析、不依賴後端 API 的設計。
 - 資料整理過程中曾參考第三方資料集 [MISNUK/CECDataSet](https://github.com/MISNUK/CECDataSet) 交叉核對部分歷史選舉的資料格式與完整性；實際使用的資料仍以中選會官方發布為準。
+- 後端行政區異動記錄（未匯出到這個前端，純後端稽核用途）的事件分類方式（新增/刪除/改名/邊界變更）設計參考 [ronnywang/segis-village](https://github.com/ronnywang/segis-village)；實際程式碼與資料是自行處理 SEGIS 原始快照重新產生的，沒有直接使用該專案的程式碼或資料。
