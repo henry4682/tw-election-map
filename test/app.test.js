@@ -658,7 +658,21 @@ describe('geometryFor (幾何去重：resolve geometry_hash 回實際 GeoJSON ge
     });
 });
 
-describe('fetchGeometries (Stage: shared geometry store, fetched once per session)', () => {
+describe('chunkKeysFor (幾何分片：從頂層節點找出要抓哪幾份分片檔)', () => {
+    test('dedupes chunk keys and drops nodes without one', () => {
+        const keys = app.chunkKeysFor([
+            { name: 'a', geometry_chunk: '甲縣' },
+            { name: 'b', geometry_chunk: '金門縣' },
+            { name: 'c', geometry_chunk: '甲縣' },
+            { name: 'd', geometry_chunk: null },
+            { name: 'e' },
+        ]);
+
+        assert.deepEqual(keys, ['甲縣', '金門縣']);
+    });
+});
+
+describe('fetchGeometryChunk/fetchGeometriesFor (幾何去重表按縣市分片，只抓用得到的分片)', () => {
     let realFetch;
 
     beforeEach(() => {
@@ -669,7 +683,7 @@ describe('fetchGeometries (Stage: shared geometry store, fetched once per sessio
         globalThis.fetch = realFetch;
     });
 
-    test('parses the payload into a Map and only fetches once across repeated calls', async () => {
+    test('fetches one chunk and only fetches it once across repeated calls', async () => {
         let fetchCallCount = 0;
 
         globalThis.fetch = () => {
@@ -677,16 +691,66 @@ describe('fetchGeometries (Stage: shared geometry store, fetched once per sessio
 
             return Promise.resolve({
                 ok: true,
-                json: () => Promise.resolve({ schema_version: 1, geometries: { h1: { type: 'Polygon', coordinates: [] } } }),
+                json: () => Promise.resolve({ schema_version: 1, chunk: '測試縣A', geometries: { h1: { type: 'Polygon', coordinates: [] } } }),
             });
         };
 
-        const [store1, store2] = await Promise.all([app.fetchGeometries(), app.fetchGeometries()]);
+        const [store1, store2] = await Promise.all([app.fetchGeometryChunk('測試縣A'), app.fetchGeometryChunk('測試縣A')]);
 
         assert.equal(fetchCallCount, 1);
         assert.equal(store1, store2);
         assert.ok(store1 instanceof Map);
         assert.deepEqual(store1.get('h1'), { type: 'Polygon', coordinates: [] });
+    });
+
+    test('a failed chunk fetch is not cached forever; a later call retries', async () => {
+        let fetchCallCount = 0;
+
+        globalThis.fetch = () => {
+            fetchCallCount += 1;
+
+            return fetchCallCount === 1
+                ? Promise.resolve({ ok: false, status: 500 })
+                : Promise.resolve({
+                    ok: true,
+                    json: () => Promise.resolve({ schema_version: 1, chunk: '測試縣B', geometries: { h2: { type: 'Polygon', coordinates: [] } } }),
+                });
+        };
+
+        await assert.rejects(() => app.fetchGeometryChunk('測試縣B'));
+
+        const store = await app.fetchGeometryChunk('測試縣B');
+        assert.equal(fetchCallCount, 2);
+        assert.ok(store.has('h2'));
+    });
+
+    test('fetchGeometriesFor() fetches only the chunks referenced by the given top-level items, merged into one Map', async () => {
+        const requestedUrls = [];
+
+        globalThis.fetch = (url) => {
+            requestedUrls.push(url);
+
+            const chunk = decodeURIComponent(url.match(/geometries\/(.+)\.json$/)[1]);
+
+            return Promise.resolve({
+                ok: true,
+                json: () => Promise.resolve({
+                    schema_version: 1,
+                    chunk,
+                    geometries: { [`hash-${chunk}`]: { type: 'Polygon', coordinates: [chunk] } },
+                }),
+            });
+        };
+
+        const merged = await app.fetchGeometriesFor([
+            { name: 'x', geometry_chunk: '測試縣C' },
+            { name: 'y', geometry_chunk: '測試縣D' },
+        ]);
+
+        assert.equal(requestedUrls.length, 2);
+        assert.ok(merged instanceof Map);
+        assert.deepEqual(merged.get('hash-測試縣C'), { type: 'Polygon', coordinates: ['測試縣C'] });
+        assert.deepEqual(merged.get('hash-測試縣D'), { type: 'Polygon', coordinates: ['測試縣D'] });
     });
 });
 

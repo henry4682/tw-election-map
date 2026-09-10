@@ -87,37 +87,59 @@ describe('drilldown fixture region tree', () => {
         assert.ok(names.includes('金門縣'), 'fixture should include 金門縣 for DRILLDOWN_INSET_GROUPS coverage');
     });
 
-    test('every region node has a geometry_hash that resolves in geometries.json, plus results and actual_winner_candidacy_id consistent with results[0]', () => {
-        const geometries = readJson('geometries.json').geometries;
-
-        const walk = (regions) => {
+    test('every region node resolves its geometry_hash in its top-level ancestor\'s geometry_chunk file, plus results and actual_winner_candidacy_id consistent with results[0]', () => {
+        // 幾何去重表按縣市分片（見 DedupsGeometry trait）：只有頂層節點自己帶
+        // geometry_chunk，子孫節點沿用同一個頂層祖先的分片，這裡模擬前端
+        // fetchGeometriesFor() 的邏輯，把整棵子樹底下的 geometry_hash 都拿去查同一個
+        // chunk 檔案。
+        const walk = (regions, geometries, label) => {
             for (const r of regions) {
                 assert.ok(r.geometry_hash, `${r.name} missing geometry_hash`);
-                assert.ok(geometries[r.geometry_hash], `${r.name}'s geometry_hash does not resolve in geometries.json`);
+                assert.ok(geometries[r.geometry_hash], `${r.name}'s geometry_hash does not resolve in ${label}`);
                 assert.ok(Array.isArray(r.results) && r.results.length > 0, `${r.name} missing results`);
                 assert.equal(r.actual_winner_candidacy_id, r.results[0].candidacy_id, `${r.name} actual_winner mismatch`);
 
-                if (r.children) walk(r.children);
+                if (r.children) walk(r.children, geometries, label);
             }
         };
 
-        walk(data.regions);
+        for (const top of data.regions) {
+            assert.ok(top.geometry_chunk, `${top.name} (top-level) missing geometry_chunk`);
+
+            // 磁碟上的分片檔名是原始縣市名稱本身，不是 percent-encode 過的字串——見
+            // DedupsGeometry::geometryChunkFileName() 註解，encodeURIComponent() 只
+            // 在前端組 fetch URL 時才用，檔名本身不能先編碼一次。
+            const chunkFile = `geometries/${top.geometry_chunk}.json`;
+            const { geometries } = readJson(chunkFile);
+
+            walk([top], geometries, chunkFile);
+        }
     });
 });
 
-describe('geometries fixture (幾何去重共用表)', () => {
-    test('is a non-empty hash-keyed map of GeoJSON geometries', () => {
-        const { schema_version: schemaVersion, geometries } = readJson('geometries.json');
+describe('geometries fixture (幾何去重共用表，按縣市分片)', () => {
+    const GEOMETRIES_DIR = path.join(FIXTURES_DIR, 'geometries');
+    const chunkFiles = fs.readdirSync(GEOMETRIES_DIR).filter((f) => f.endsWith('.json'));
 
-        assert.equal(schemaVersion, app.SCHEMA_VERSION_GEOMETRIES ?? 1);
-        assert.ok(geometries && typeof geometries === 'object');
-        assert.ok(Object.keys(geometries).length > 0);
-
-        for (const [hash, geometry] of Object.entries(geometries)) {
-            assert.match(hash, /^[0-9a-f]{32}$/, `key "${hash}" doesn't look like an md5 hash`);
-            assert.ok(['Polygon', 'MultiPolygon'].includes(geometry.type), `geometry for ${hash} has unexpected type`);
-        }
+    test('at least one chunk file exists', () => {
+        assert.ok(chunkFiles.length > 0, 'expected at least one file under fixtures/data/geometries/');
     });
+
+    for (const file of chunkFiles) {
+        test(`${file} is a non-empty hash-keyed map of GeoJSON geometries`, () => {
+            const { schema_version: schemaVersion, chunk, geometries } = readJson(`geometries/${file}`);
+
+            assert.equal(schemaVersion, app.SCHEMA_VERSION_GEOMETRIES ?? 1);
+            assert.equal(file.replace(/\.json$/, ''), chunk, `${file}'s filename doesn't match its own "chunk" field`);
+            assert.ok(geometries && typeof geometries === 'object');
+            assert.ok(Object.keys(geometries).length > 0);
+
+            for (const [hash, geometry] of Object.entries(geometries)) {
+                assert.match(hash, /^[0-9a-f]{32}$/, `key "${hash}" doesn't look like an md5 hash`);
+                assert.ok(['Polygon', 'MultiPolygon'].includes(geometry.type), `geometry for ${hash} has unexpected type`);
+            }
+        });
+    }
 });
 
 describe('current-ly-parties fixture', () => {

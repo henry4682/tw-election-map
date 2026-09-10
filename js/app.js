@@ -27,7 +27,7 @@
  * @typedef {Object} RegionNode
  * @property {number} region_id
  * @property {string} name
- * @property {string|null} geometry_hash - 參照共用幾何表（見 fetchGeometries()/
+ * @property {string|null} geometry_hash - 參照共用幾何表（見 fetchGeometriesFor()/
  *   geometryFor()）的內容雜湊，不是這個節點自己內嵌完整 GeoJSON geometry；少數行政區
  *   沒有幾何資料是 null（見 CLAUDE.md「地圖上看到白色色塊」已知資料缺口），呼叫端一律
  *   透過 geometryFor() 取得實際 geometry，不要直接讀這個欄位。
@@ -67,10 +67,11 @@ const DISTRICT_MAP_INDEX_URL = 'data/district-map-index.json';
 const districtMapDataUrl = (id, hash) => withVersion(`data/election-${id}-districts.json`, hash);
 
 // 對應後端 ElectionResultsMapBuilder 的 SCHEMA_VERSION_* 常數，兩邊要一起改。
-// 2：region/district 節點改成 geometry_hash 參照共用幾何表，不再內嵌完整 geometry
-// （見 fetchGeometries()/geometryFor() 註解）。
-const SCHEMA_VERSION_DRILLDOWN = 2;
-const SCHEMA_VERSION_DISTRICT_MAP = 2;
+// 2：region/district 節點改成 geometry_hash 參照共用幾何表。
+// 3：共用幾何表改成按縣市分片，頂層節點多一個 geometry_chunk 欄位（見
+// fetchGeometriesFor()/geometryFor() 註解）。
+const SCHEMA_VERSION_DRILLDOWN = 3;
+const SCHEMA_VERSION_DISTRICT_MAP = 3;
 
 // 鑽層地圖等選舉資料檔案動輒 10+MB（全國村里層級幾何+得票），使用者在幾個屆別之間
 // 來回切換時不重新 fetch/解析同一份——只在這次瀏覽 session 的記憶體裡快取，重新整理
@@ -187,22 +188,29 @@ async function fetchElectionData(url, kind, expectedVersion) {
     return request;
 }
 
-const GEOMETRIES_URL = 'data/geometries.json';
+const GEOMETRIES_DIR = 'data/geometries';
 const SCHEMA_VERSION_GEOMETRIES = 1;
-let geometriesPromise = null;
+const geometryChunkPromises = new Map(); // 分片 key（縣市名稱）=> Promise<Map<hash, geometry>>
 
 /**
- * 幾何去重：drilldown/district 資料原本每個節點都直接內嵌自己的 GeoJSON geometry，
- * 同一個村里/選區的形狀在 50+ 場選舉的匯出檔案裡幾乎逐字重複——量測過拿掉重複後，
- * 全部村里/選區形狀只佔原本大小的一小部分（見 IMPROVEMENT_PLAN.md 資料量測章節）。
- * 現在資料改成每個節點存 `geometry_hash` 參照這裡的共用幾何表，前端渲染前才 resolve
- * 回實際的 geometry。這份表只抓一次、整個瀏覽 session 共用（不分模式，三個模式都可能
- * 用到同一批村里形狀），用跟 fetchElectionData() 一樣的 promise 快取避免重複請求；
- * 一旦抓到就不會再變，不需要跟 electionDataCache 一樣做 LRU 淘汰。
+ * 幾何去重＋分片：drilldown/district 資料原本每個節點都直接內嵌自己的 GeoJSON
+ * geometry，同一個村里/選區的形狀在 50+ 場選舉的匯出檔案裡幾乎逐字重複——量測過拿掉
+ * 重複後，全部村里/選區形狀只佔原本大小的一小部分（見 IMPROVEMENT_PLAN.md 資料量測
+ * 章節）。現在資料改成每個節點存 `geometry_hash` 參照共用幾何表，前端渲染前才 resolve
+ * 回實際的 geometry。
+ *
+ * 這份共用表原本是單一一個 geometries.json（壓縮後 8MB+，累加了所有 65 場選舉曾經
+ * 用過的形狀），不管使用者這次要看哪個選舉/縣市都得整份下載完才能畫圖——改成按縣市
+ * 分片存放（frontend/data/geometries/<縣市>.json，見後端 DedupsGeometry trait），
+ * 每個選舉頂層節點（regions/districts）自帶 `geometry_chunk` 欄位指出要抓哪一片。
+ * fetchGeometriesFor() 只抓「這次載入的選舉實際會用到」的分片，平行下載，不用像以前
+ * 那樣不管使用者要看哪裡都先付一次全國共用表的下載成本；已經抓過的分片會跨選舉/跨
+ * session（頁面沒重整期間）快取，不重複下載。
  */
-function fetchGeometries() {
-    if (! geometriesPromise) {
-        geometriesPromise = fetchJsonOrThrow(GEOMETRIES_URL).then((payload) => {
+function fetchGeometryChunk(chunkKey) {
+    if (! geometryChunkPromises.has(chunkKey)) {
+        const url = `${GEOMETRIES_DIR}/${encodeURIComponent(chunkKey)}.json`;
+        const promise = fetchJsonOrThrow(url).then((payload) => {
             checkSchemaVersion('geometries', payload, SCHEMA_VERSION_GEOMETRIES);
 
             const store = new Map(Object.entries(payload.geometries));
@@ -211,18 +219,46 @@ function fetchGeometries() {
 
             return store;
         }).catch((e) => {
-            // 失敗（常見是手機網路不穩，這份表壓縮後 8MB+，比其他檔案更容易在弱網路
-            // 中斷）不能把 rejected promise 留在 geometriesPromise 快取裡——不重設的話
-            // 這個模組變數活多久、之後所有 loadElection() 呼叫 fetchGeometries() 拿到
-            // 的都是同一個永遠 reject 的 promise，使用者重新整理選舉清單、切換屆別都
-            // 救不回來，畫面卡死在「載入中」。重設成 null 讓下一次呼叫重新發request。
-            geometriesPromise = null;
+            // 失敗（常見是手機網路不穩）不能把 rejected promise 留在快取裡——不重設的話
+            // 這個分片會永遠卡在失敗狀態，之後任何用得到這個縣市的選舉都救不回來，畫面
+            // 卡死在「載入中」。重設成沒快取讓下一次呼叫重新發請求。
+            geometryChunkPromises.delete(chunkKey);
 
             throw e;
         });
+
+        geometryChunkPromises.set(chunkKey, promise);
     }
 
-    return geometriesPromise;
+    return geometryChunkPromises.get(chunkKey);
+}
+
+/**
+ * 從一份選舉資料的頂層節點（drilldown 的 regions／district-map 的 districts）找出
+ * 各自標記的 geometry_chunk，去重回傳。往下鑽層看到的子節點（鄉鎮/村里）沒有自己的
+ * geometry_chunk 欄位——它們跟頂層祖先歸在同一個分片，只要抓到頂層那些分片就夠了。
+ * @param {{geometry_chunk?: string|null}[]} topLevelItems
+ * @returns {string[]}
+ */
+function chunkKeysFor(topLevelItems) {
+    return [...new Set(topLevelItems.map((item) => item.geometry_chunk).filter((key) => key))];
+}
+
+/**
+ * 三個模式共用：抓齊某份選舉資料需要的所有幾何分片（平行下載），合併成單一個
+ * hash → geometry 的 Map 回傳，呼叫端（geometryFor()）不用知道分片這件事、也不用改。
+ * @param {{geometry_chunk?: string|null}[]} topLevelItems
+ * @returns {Promise<Map<string, object>>}
+ */
+async function fetchGeometriesFor(topLevelItems) {
+    const chunks = await Promise.all(chunkKeysFor(topLevelItems).map((key) => fetchGeometryChunk(key)));
+
+    const merged = new Map();
+    for (const chunk of chunks) {
+        for (const [hash, geometry] of chunk) merged.set(hash, geometry);
+    }
+
+    return merged;
 }
 
 /**
@@ -1074,7 +1110,7 @@ function effectiveFillNodes(region, remainingDepth) {
  *
  * 做法是淺複製每個節點物件本身（連同 children 陣列一路遞迴淺複製），但不複製節點內的
  * results 等大型欄位——那些欄位的值本來就不會被猜測邏輯改寫，共用同一個參照不影響
- * 隔離效果。幾何資料現在只是個 geometry_hash 字串參照共用表（見 fetchGeometries()），
+ * 隔離效果。幾何資料現在只是個 geometry_hash 字串參照共用表（見 fetchGeometriesFor()），
  * 淺複製天然就不會動到真正的幾何內容，不需要另外考慮。
  * @param {RegionNode[]} regions - 可能是 deepFreeze() 過的唯讀樹，回傳值一定是全新的
  *   可寫物件（見 deepFreeze() 相關單元測試），呼叫端不用先自己複製一份。
@@ -1200,7 +1236,7 @@ function predictionMap() {
         election: null,
         candidates: [],
         regionTree: [],
-        // 幾何去重（見 fetchGeometries() 註解）：loadElection() 抓到之後存這裡，
+        // 幾何去重（見 fetchGeometriesFor() 註解）：loadElection() 抓到之後存這裡，
         // featureCollectionFor()/initInsetMaps() 等要畫圖的地方都透過 geometryFor() 查。
         geometryStore: null,
         elections: [],
@@ -1338,13 +1374,6 @@ function predictionMap() {
         async start() {
             this.status = 'loading';
 
-            // 幾何共用表（geometries.json，見 fetchGeometries() 註解）現在是壓縮後
-            // 8MB+ 的固定成本，loadElection() 才第一次呼叫的話，會排在選舉清單/
-            // 現任立院政黨這兩個小檔案的序列 await 之後才開始下載，拖長第一次進畫面
-            // 的時間。這裡先觸發（不 await），讓它跟後面的請求並行下載，loadElection()
-            // 裡的 fetchGeometries() 會拿到同一個已經在跑的 promise。
-            fetchGeometries().catch(() => {});
-
             const partiesResult = await loadCurrentLyParties();
             this.currentLyParties = partiesResult.parties;
             this.loadCustomPartiesFromStorage();
@@ -1474,17 +1503,16 @@ function predictionMap() {
             id = Number(id);
             const hash = this.elections.find((e) => e.id === id)?.content_hash;
 
-            // loadElectionOrHandleError() 自己的失敗會內部處理（status='error' 或
-            // switchError），不會讓 Promise.all reject；能讓這裡 reject 的只有
-            // fetchGeometries()（見該函式註解：常見是幾何共用表在弱網路中斷）——沒有
-            // 這層 try/catch 的話，畫面會永遠卡在「載入中」轉圈圈，因為底下沒有任何
-            // 程式碼會把 status 改成別的值。
-            let data, geometryStore;
+            const data = await loadElectionOrHandleError(this, drillDownDataUrl(id, hash), 'drilldown', SCHEMA_VERSION_DRILLDOWN);
+
+            if (! data) return;
+
+            // fetchGeometriesFor() 只抓這份資料實際用得到的縣市分片（見該函式註解），
+            // 失敗常見是弱網路——沒有這層 try/catch 的話畫面會永遠卡在「載入中」轉
+            // 圈圈，因為底下沒有任何程式碼會把 status 改成別的值。
+            let geometryStore;
             try {
-                [data, geometryStore] = await Promise.all([
-                    loadElectionOrHandleError(this, drillDownDataUrl(id, hash), 'drilldown', SCHEMA_VERSION_DRILLDOWN),
-                    fetchGeometries(),
-                ]);
+                geometryStore = await fetchGeometriesFor(data.regions);
             } catch (e) {
                 if (this.election) {
                     this.switchError = `切換失敗，目前仍顯示「${this.election.name}」的結果。`;
@@ -1494,8 +1522,6 @@ function predictionMap() {
                 }
                 return;
             }
-
-            if (! data) return;
 
             this.geometryStore = geometryStore;
             this.selectedElectionId = id;
@@ -2230,10 +2256,6 @@ function drillDownMap() {
         async start() {
             this.status = 'loading';
 
-            // 見 predictionMap() start() 同一段註解：先觸發（不 await）幾何共用表的
-            // 下載，讓它跟選舉清單請求並行，不要排在後面才開始。
-            fetchGeometries().catch(() => {});
-
             try {
                 this.elections = await fetchJsonOrThrow(DRILLDOWN_INDEX_URL);
             } catch (e) {
@@ -2263,14 +2285,15 @@ function drillDownMap() {
             id = Number(id);
             const hash = this.elections.find((e) => e.id === id)?.content_hash;
 
-            // 見 predictionMap() loadElection() 同一段註解：fetchGeometries() 失敗要
+            const data = await loadElectionOrHandleError(this, drillDownDataUrl(id, hash), 'drilldown', SCHEMA_VERSION_DRILLDOWN);
+
+            if (! data) return;
+
+            // 見 predictionMap() loadElection() 同一段註解：fetchGeometriesFor() 失敗要
             // 自己接住，不然畫面會永遠卡在「載入中」。
-            let data, geometryStore;
+            let geometryStore;
             try {
-                [data, geometryStore] = await Promise.all([
-                    loadElectionOrHandleError(this, drillDownDataUrl(id, hash), 'drilldown', SCHEMA_VERSION_DRILLDOWN),
-                    fetchGeometries(),
-                ]);
+                geometryStore = await fetchGeometriesFor(data.regions);
             } catch (e) {
                 if (this.election) {
                     this.switchError = `切換失敗，目前仍顯示「${this.election.name}」的結果。`;
@@ -2280,8 +2303,6 @@ function drillDownMap() {
                 }
                 return;
             }
-
-            if (! data) return;
 
             this.geometryStore = geometryStore;
             this.selectedElectionId = id;
@@ -2671,10 +2692,6 @@ function districtMap() {
         async start() {
             this.status = 'loading';
 
-            // 見 predictionMap() start() 同一段註解：先觸發（不 await）幾何共用表的
-            // 下載，讓它跟選舉清單請求並行，不要排在後面才開始。
-            fetchGeometries().catch(() => {});
-
             try {
                 this.elections = await fetchJsonOrThrow(DISTRICT_MAP_INDEX_URL);
             } catch (e) {
@@ -2700,14 +2717,15 @@ function districtMap() {
             id = Number(id);
             const hash = this.elections.find((e) => e.id === id)?.content_hash;
 
-            // 見 predictionMap() loadElection() 同一段註解：fetchGeometries() 失敗要
+            const data = await loadElectionOrHandleError(this, districtMapDataUrl(id, hash), 'district-map', SCHEMA_VERSION_DISTRICT_MAP);
+
+            if (! data) return;
+
+            // 見 predictionMap() loadElection() 同一段註解：fetchGeometriesFor() 失敗要
             // 自己接住，不然畫面會永遠卡在「載入中」。
-            let data, geometryStore;
+            let geometryStore;
             try {
-                [data, geometryStore] = await Promise.all([
-                    loadElectionOrHandleError(this, districtMapDataUrl(id, hash), 'district-map', SCHEMA_VERSION_DISTRICT_MAP),
-                    fetchGeometries(),
-                ]);
+                geometryStore = await fetchGeometriesFor(data.districts);
             } catch (e) {
                 if (this.election) {
                     this.switchError = `切換失敗，目前仍顯示「${this.election.name}」的結果。`;
@@ -2717,8 +2735,6 @@ function districtMap() {
                 }
                 return;
             }
-
-            if (! data) return;
 
             this.geometryStore = geometryStore;
             this.selectedElectionId = id;
@@ -2905,7 +2921,9 @@ if (typeof module !== 'undefined' && module.exports) {
         fetchElectionData,
         loadElectionOrHandleError,
         geometryFor,
-        fetchGeometries,
+        fetchGeometriesFor,
+        fetchGeometryChunk,
+        chunkKeysFor,
         deepFreeze,
         electionDataCache,
         ELECTION_DATA_CACHE_LIMIT,

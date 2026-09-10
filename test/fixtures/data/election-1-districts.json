@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "election": {
     "id": 1,
     "name": "測試區域立委選舉",
@@ -41,7 +41,8 @@
           "flipped": null
         }
       ],
-      "geometry_hash": "9fb07522f6955b88afec78abf99b681c"
+      "geometry_hash": "9fb07522f6955b88afec78abf99b681c",
+      "geometry_chunk": "甲縣"
     },
     {
       "district_id": 2,
@@ -68,7 +69,8 @@
           "flipped": true
         }
       ],
-      "geometry_hash": "6b441ea60576496bf219ed3591f8a983"
+      "geometry_hash": "6b441ea60576496bf219ed3591f8a983",
+      "geometry_chunk": "金門縣"
     }
   ]
 }

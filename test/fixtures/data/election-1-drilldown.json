@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "election": {
     "id": 1,
     "name": "測試縣市長選舉",
@@ -75,7 +75,8 @@
           "geometry_hash": "8831774265f77b71e5ab1011f7b48a63"
         }
       ],
-      "geometry_hash": "9fb07522f6955b88afec78abf99b681c"
+      "geometry_hash": "9fb07522f6955b88afec78abf99b681c",
+      "geometry_chunk": "甲縣"
     },
     {
       "region_id": 2,
@@ -130,7 +131,8 @@
           "geometry_hash": "e7da97b524bda03fd8c212f332f24810"
         }
       ],
-      "geometry_hash": "6b441ea60576496bf219ed3591f8a983"
+      "geometry_hash": "6b441ea60576496bf219ed3591f8a983",
+      "geometry_chunk": "金門縣"
     }
   ]
 }
