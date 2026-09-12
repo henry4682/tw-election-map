@@ -82,14 +82,8 @@
                     @click="shareImage()"
                     :disabled="status !== 'ready'"
                 >分享</button>
-                <button
-                    x-show="typeof ClipboardItem !== 'undefined' && !!navigator.clipboard?.write"
-                    x-cloak
-                    @click="copyImageToClipboard()"
-                    :disabled="status !== 'ready'"
-                >複製圖片</button>
                 <p class="hint" x-show="shareStatus" x-cloak x-text="shareStatus"></p>
-                <p class="hint">手機可以按「分享」直接分享到社群 App，電腦可以按「複製圖片」直接貼到發文框，不支援時都會改成下載圖片</p>
+                <p class="hint">支援時可直接分享到社群 App；不支援時會改成下載圖片。</p>
             </div>
 
             <div class="toolbar" x-show="drillPath.length" x-cloak>

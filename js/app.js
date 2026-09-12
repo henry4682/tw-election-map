@@ -1304,8 +1304,8 @@ function predictionMap() {
         // 明細，不再建立新的候選人循環編輯（見 selectRegionById()）。
         lastEdit: null,
 
-        // 分享/下載/複製圖片這幾個動作用起來都沒有明顯的畫面變化（系統分享選單、剪貼簿
-        // 寫入都是瀏覽器層級的操作，頁面本身看不出來發生了什麼），用這個暫時提示告訴
+        // 分享/下載圖片本身都沒有明顯的畫面變化（系統分享選單是瀏覽器層級的操作，頁面
+        // 本身看不出來發生了什麼），用這個暫時提示告訴
         // 使用者結果；flashShareStatus() 設定後幾秒自動清空，不用使用者自己關掉。
         shareStatus: '',
         _shareStatusTimer: null,
@@ -2166,8 +2166,7 @@ function predictionMap() {
          * 標籤依它們在畫面上相對 #map 的實際位置，合成進同一張 offscreen canvas 再輸出，
          * 匯出的圖片才會跟畫面上看到的一致。
          *
-         * shareImage()/copyImageToClipboard() 共用這段合成邏輯，只有拿到 canvas 之後要做
-         * 什麼不同，回傳 null 代表這次呼叫該放棄（未就緒或分享途中選舉被切換，見下方註解），
+         * 回傳 null 代表這次呼叫該放棄（未就緒或分享途中選舉被切換，見下方註解），
          * 呼叫端看到 null 直接 return。
          */
         async composeExportCanvas() {
@@ -2291,7 +2290,7 @@ function predictionMap() {
             link.click();
         },
 
-        /** 見 shareStatus 宣告處的註解：分享/複製/下載這幾個動作本身都沒有明顯畫面變化。 */
+        /** 見 shareStatus 宣告處的註解：分享/下載本身都沒有明顯畫面變化。 */
         flashShareStatus(message) {
             this.shareStatus = message;
             clearTimeout(this._shareStatusTimer);
@@ -2301,8 +2300,7 @@ function predictionMap() {
         /**
          * 「分享」跟「下載圖片」用同一張合成好的圖，差在最後怎麼交給使用者：支援檔案分享
          * 的瀏覽器（主要是手機版 Safari/Chrome）叫出系統原生分享選單，可以直接分享到
-         * IG/Line/Threads 等 App；不支援的瀏覽器（多半是桌面版，見 copyImageToClipboard()
-         * 這個桌面版比較實用的替代方案）退回跟「下載圖片」一樣的行為。
+         * IG/Line/Threads 等 App；不支援的瀏覽器退回「下載圖片」。
          *
          * navigator.canShare({ files }) 才是真的檢查「這個瀏覽器支援分享檔案」——
          * navigator.share 存在不代表支援分享檔案（部分瀏覽器只支援分享文字/連結），
@@ -2340,45 +2338,6 @@ function predictionMap() {
                     this.downloadCanvas(canvas, filename);
                     this.flashShareStatus('分享失敗，已改為下載圖片');
                 }
-            }
-        },
-
-        /**
-         * 桌面瀏覽器目前幾乎不支援 navigator.share 分享檔案（見 shareImage() 註解），
-         * 複製圖片到剪貼簿是桌面版比較實際能用的做法——貼到 Twitter/Facebook/LINE/
-         * Discord 等平台的發文框大多能直接貼上圖片，不用先存檔再手動選檔上傳。
-         * ClipboardItem 建構子跟 navigator.clipboard.write() 都要存在才真的支援
-         * （部分瀏覽器只有讀取剪貼簿的 API，沒有寫入圖片的能力）。
-         */
-        async copyImageToClipboard() {
-            const canvas = await this.composeExportCanvas();
-
-            if (! canvas) return;
-
-            const filename = this.exportFileName();
-
-            if (typeof ClipboardItem === 'undefined' || ! navigator.clipboard?.write) {
-                this.downloadCanvas(canvas, filename);
-                this.flashShareStatus('此瀏覽器不支援複製圖片，已改為下載');
-                return;
-            }
-
-            const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
-
-            if (! blob) {
-                this.downloadCanvas(canvas, filename);
-                this.flashShareStatus('無法產生圖片，已改為下載');
-                return;
-            }
-
-            try {
-                await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
-                this.flashShareStatus('已複製圖片，可以直接貼到貼文框');
-            } catch (e) {
-                // 常見失敗原因是使用者拒絕剪貼簿權限，跟 shareImage() 的其他失敗情況一樣
-                // 退回下載，讓使用者至少能拿到圖片。
-                this.downloadCanvas(canvas, filename);
-                this.flashShareStatus('複製失敗，已改為下載圖片');
             }
         },
     };
