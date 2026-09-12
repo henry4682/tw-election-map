@@ -250,13 +250,13 @@
                         <p class="hint">自訂政黨存在瀏覽器（localStorage），只有這個瀏覽器看得到，重新整理不會消失</p>
                     </section>
 
-                    <section x-show="election?.type === 'legislator'" x-cloak>
+                    <section x-show="election?.type === 'legislator'" x-cloak @pointermove.window="continueSeatPaintAtPoint($event)">
                         <h2>不分區／山地原民／平地原民立委席次</h2>
-                        <p class="hint">這三類沒有選區可以在地圖上猜，改成點格子塗色：先在上面「選一個政黨」，再點下面的格子塗上去；再點一次同一個政黨的格子會變回空白，沒選政黨時點格子直接清空（橡皮擦）</p>
+                        <p class="hint">這三類沒有選區可以在地圖上猜：先在上面選一個政黨，再按住並拖過格子連續填色；取消選取政黨後拖曳就是橡皮擦。</p>
                         <template x-for="category in otherLegislatorCategories" :key="category.type">
                             <div class="other-legislator-category">
                                 <h3 x-text="`${category.label}（已塗 ${otherLegislatorPaintedCount(category)}／${category.squares.length} 席）`"></h3>
-                                <div class="seat-grid">
+                                <div class="seat-grid" @pointerup.window="endSeatPaintDrag()" @pointercancel.window="endSeatPaintDrag()">
                                     <template x-for="(s, i) in category.squares" :key="i">
                                         <button
                                             type="button"
@@ -264,7 +264,10 @@
                                             :style="s ? `background:${s.color}` : ''"
                                             :title="s ? s.party_name : '空白'"
                                             :aria-label="`${category.label}第 ${i + 1} 席，${s ? s.party_name : '空白'}`"
-                                            @click="paintOtherLegislatorSeat(category, i)"
+                                            :data-seat-category="category.type"
+                                            :data-seat-index="i"
+                                            @pointerdown.prevent="beginSeatPaintDrag(category, i)"
+                                            @pointerenter="continueSeatPaintDrag(category, i)"
                                         ></button>
                                     </template>
                                 </div>
@@ -565,6 +568,6 @@
         </div>
 
     </div>
-    <script src="js/app.js?v=20260912-6"></script>
+    <script src="js/app.js?v=20260912-7"></script>
 </body>
 </html>

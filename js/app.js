@@ -1410,6 +1410,8 @@ function predictionMap() {
         // paintOtherLegislatorSeat()）。原本兩處各自列一份政黨按鈕清單，使用者要用同一個
         // 政黨還得在兩份重複清單裡各點一次；合併成一份清單、一個狀態後，選一次到處都能用。
         activePartyName: null,
+        _seatPaintDragging: false,
+        _lastSeatPaintKey: null,
 
         /** 選取／取消畫筆；不修改目前查看中的行政區，真正填色一律發生在下一次點地圖時。 */
         selectParty(party) {
@@ -1449,6 +1451,48 @@ function predictionMap() {
             category.squares[index] = current?.party_name === brush.party_name
                 ? null
                 : { party_name: brush.party_name, color: brush.color };
+        },
+
+        /** 按下後開始連續填色；拖曳經過的格子只套用畫筆，不做 toggle，避免來回經過被清空。 */
+        beginSeatPaintDrag(category, index) {
+            this._seatPaintDragging = true;
+            this._lastSeatPaintKey = `${category.type}:${index}`;
+            this.fillOtherLegislatorSeat(category, index);
+        },
+
+        continueSeatPaintDrag(category, index) {
+            if (this._seatPaintDragging) this.fillOtherLegislatorSeat(category, index);
+        },
+
+        endSeatPaintDrag() {
+            this._seatPaintDragging = false;
+            this._lastSeatPaintKey = null;
+        },
+
+        continueSeatPaintAtPoint(event) {
+            if (! this._seatPaintDragging) return;
+
+            const square = document.elementFromPoint(event.clientX, event.clientY)?.closest('.seat-square');
+            if (! square) return;
+
+            const category = this.otherLegislatorCategories.find((item) => item.type === square.dataset.seatCategory);
+            const index = Number(square.dataset.seatIndex);
+            const key = `${category?.type}:${index}`;
+
+            if (! category || ! Number.isInteger(index) || key === this._lastSeatPaintKey) return;
+
+            this._lastSeatPaintKey = key;
+            this.fillOtherLegislatorSeat(category, index);
+        },
+
+        fillOtherLegislatorSeat(category, index) {
+            const brush = this.activePartyName
+                ? this.assignableParties.find((p) => p.party_name === this.activePartyName)
+                : null;
+
+            category.squares[index] = brush
+                ? { party_name: brush.party_name, color: brush.color }
+                : null;
         },
 
         /** 見 index.html：每一類格子上方顯示「已塗 X／固定席次數」，不用另外數。 */
