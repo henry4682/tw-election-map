@@ -75,6 +75,22 @@
                     </select>
                 </label>
                 <p class="hint" x-show="fillLevelIndex > displayLevelIndex" x-cloak>顯示的是<span x-text="levels[displayLevelIndex].label"></span>形狀，底色是底下<span x-text="fillLevelLabel"></span>猜測結果聚合出來的多數決；點一個<span x-text="levels[displayLevelIndex].label"></span>會鑽入看底下的<span x-text="fillLevelLabel"></span>猜測</p>
+                <button @click="resetToActual()">重設為實際結果</button>
+                <button @click="undoLastEdit()" :disabled="! lastEdit">復原上一步</button>
+                <button
+                    x-show="typeof navigator.share === 'function'"
+                    x-cloak
+                    @click="shareImage()"
+                    :disabled="status !== 'ready'"
+                >分享</button>
+                <button
+                    x-show="typeof ClipboardItem !== 'undefined' && !!navigator.clipboard?.write"
+                    x-cloak
+                    @click="copyImageToClipboard()"
+                    :disabled="status !== 'ready'"
+                >複製圖片</button>
+                <p class="hint" x-show="shareStatus" x-cloak x-text="shareStatus"></p>
+                <p class="hint">手機可以按「分享」直接分享到社群 App，電腦可以按「複製圖片」直接貼到發文框，不支援時都會改成下載圖片</p>
             </div>
 
             <div class="toolbar" x-show="drillPath.length" x-cloak>
@@ -91,64 +107,12 @@
             </div>
 
             <div class="layout" x-show="status === 'ready'" x-cloak>
-                <div id="map" class="map-pane">
-                    <div class="tooltip" x-show="hoveredRegion" x-cloak :style="`left:${tooltipPos.x}px; top:${tooltipPos.y}px`">
-                        <strong x-text="hoveredRegion?.name"></strong>
-                        <template x-for="r in notableResults(hoveredRegion)" :key="r.candidacy_id">
-                            <div>
-                                <span class="tooltip-swatch" :style="`background:${candidateColor(r.candidacy_id)}`"></span>
-                                <span x-text="candidateLabel(r.candidacy_id)"></span>
-                                <strong x-text="r.votes.toLocaleString()"></strong> 票
-                                (<span x-text="votePct(r, hoveredRegion)"></span>%)
-                            </div>
-                        </template>
-                        <p class="hint" x-show="fillLevelIndex > currentDepth && hoveredRegion?.children?.length">點擊鑽入下一層</p>
-                        <p class="hint" x-show="! (fillLevelIndex > currentDepth && hoveredRegion?.children?.length) && selectedRegion?.region_id === hoveredRegion?.region_id">再點一次切換猜測候選人</p>
-                        <p class="hint" x-show="! (fillLevelIndex > currentDepth && hoveredRegion?.children?.length) && selectedRegion?.region_id !== hoveredRegion?.region_id">點擊查看明細</p>
-                    </div>
-                </div>
+                <div id="map" class="map-pane"></div>
 
                 <aside class="sidebar-pane">
                     <section>
                         <h2>點<span x-text="fillLevelLabel"></span>切換預測候選人</h2>
-                        <button @click="resetToActual()">重設為實際結果</button>
-                        <button @click="undoLastEdit()" :disabled="! lastEdit">復原上一步</button>
-                        <button @click="exportImage()" :disabled="status !== 'ready'">下載圖片</button>
-                        <button
-                            x-show="typeof navigator.share === 'function'"
-                            x-cloak
-                            @click="shareImage()"
-                            :disabled="status !== 'ready'"
-                        >分享</button>
-                        <button
-                            x-show="typeof ClipboardItem !== 'undefined' && !!navigator.clipboard?.write"
-                            x-cloak
-                            @click="copyImageToClipboard()"
-                            :disabled="status !== 'ready'"
-                        >複製圖片</button>
-                        <p class="hint" x-show="shareStatus" x-cloak x-text="shareStatus"></p>
                         <p class="hint">先點一下<span x-text="fillLevelLabel"></span>查看明細，已經選取時再點一次才會切換猜測候選人；顏色深淺代表該候選人的實際得票率，越深代表贏得越多</p>
-                        <p class="hint">下載圖片會附上選舉名稱、圖例，以及是否修改過預測的標示；手機可以按「分享」直接分享到社群 App，電腦可以按「複製圖片」直接貼到發文框，不支援時都會改成下載圖片</p>
-                        <details class="keyboard-region-list">
-                            <summary>純鍵盤操作：<span x-text="fillLevelLabel"></span>清單（跟點地圖效果相同）</summary>
-                            <ul>
-                                <template x-for="r in currentRegions" :key="r.region_id">
-                                    <li>
-                                        <button
-                                            type="button"
-                                            :class="{ active: selectedRegion?.region_id === r.region_id }"
-                                            @click="selectRegionById(r.region_id)"
-                                            @focus="hoverRegionById(r.region_id)"
-                                            @blur="hoveredRegion = null"
-                                        >
-                                            <span class="swatch" :style="`background:${candidateColor(r.assigned_candidacy_id)}`"></span>
-                                            <span x-text="r.name"></span>
-                                            <span x-show="r.children?.length" aria-hidden="true"> ›</span>
-                                        </button>
-                                    </li>
-                                </template>
-                            </ul>
-                        </details>
                     </section>
 
                     <section>
@@ -280,7 +244,6 @@
                                 (<span x-text="votePct(r, hoveredRegion)"></span>%)
                             </div>
                         </template>
-                        <p class="hint" x-show="hoveredRegion?.children?.length">點擊鑽入下一層</p>
                         <p class="hint" x-show="regionAggregateRemaining() > 0">這個層級不是同一場選舉，顏色/數字是底下各政黨贏的單位數多數決，不是真實得票</p>
                     </div>
                 </div>
@@ -288,7 +251,7 @@
                 <aside class="sidebar-pane">
                     <section>
                         <h2 x-text="election?.name"></h2>
-                        <p class="hint">點行政區鑽入下一層；鑽到最細層級後點擊會顯示完整得票明細</p>
+                        <p class="hint">先點一下行政區查看明細，已經選取時再點一次才會鑽入下一層；鑽到最細層級後點擊只會顯示完整得票明細</p>
                         <details class="keyboard-region-list">
                             <summary>純鍵盤操作：行政區清單（跟點地圖效果相同）</summary>
                             <ul>

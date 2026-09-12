@@ -901,12 +901,13 @@ function pieChartSvgFor(results, candidates) {
 }
 
 /**
- * UX-02：exportImage() 匯出的圖片以前完全沒有文字語境——不知道是哪場選舉、顏色深淺
- * 代表歷史實際得票率還是使用者自己改的猜測、也沒有圖例對照顏色是哪個候選人/政黨。
- * 這裡走訪整棵猜測樹算出匯出圖片要用的兩份資訊：(1) 圖例——不能只用頂層 candidates
- * 清單，「指定政黨」（見 colorFor() 註解）用的是使用者自訂政黨顏色，不在 candidates
- * 裡；(2) hasEdits——只要有任一節點跟換屆別時 initGuesses() 設的實際結果不同（循環過
- * 候選人或指定過政黨），就代表這不是單純的實際結果地圖，要在圖片上明確標示為預測。
+ * UX-02：分享/複製圖片以前完全沒有文字語境——不知道是哪場選舉、顏色深淺代表歷史
+ * 實際得票率還是使用者自己改的猜測、也沒有圖例對照顏色是哪個政黨。這裡走訪整棵猜測樹
+ * 算出匯出圖片要用的兩份資訊：(1) 圖例——只列黨籍跟顏色（不列候選人名字），不能只用
+ * 頂層 candidates 清單，「指定政黨」（見 colorFor() 註解）用的是使用者自訂政黨顏色，
+ * 不在 candidates 裡；(2) hasEdits——只要有任一節點跟換屆別時 initGuesses() 設的實際
+ * 結果不同（循環過候選人或指定過政黨），就代表這不是單純的實際結果地圖，要在圖片上
+ * 明確標示為預測。
  * @param {RegionNode[]} regions - predictionMap() cloneRegionTree() 出來的可寫樹。
  * @param {Candidate[]} candidates
  * @returns {{legend: {label: string, color: string}[], hasEdits: boolean}}
@@ -926,8 +927,9 @@ function summarizePredictionState(regions, candidates) {
             } else {
                 if (node.assigned_candidacy_id !== node.actual_winner_candidacy_id) hasEdits = true;
 
-                legendByKey.set(`id:${node.assigned_candidacy_id}`, {
-                    label: candidateLabelFrom(candidates, node.assigned_candidacy_id),
+                const partyName = partyNameFrom(candidates, node.assigned_candidacy_id) ?? '無黨籍/其他';
+                legendByKey.set(`party:${partyName}`, {
+                    label: partyName,
                     color: candidateColorFrom(candidates, node.assigned_candidacy_id),
                 });
             }
@@ -1254,9 +1256,7 @@ function predictionMap() {
         // （見 onRegionClick() 註解），[] 代表還在顯示層級的頂層（全國攤平，或
         // selectedRootId 選定的單一行政區攤平）。
         drillPath: [],
-        hoveredRegion: null,
         selectedRegion: null,
-        tooltipPos: { x: 0, y: 0 },
 
         // 點一下只選取/查看明細，不改猜測；同一個已選取的行政區再點一次才真的循環候選人
         // （見 selectRegionById() 註解，UX-01）。lastEdit 只記最近一次這種循環動作，供
@@ -1537,7 +1537,6 @@ function predictionMap() {
             this.selectedRootId = null;
             this.drillPath = [];
             this.selectedRegion = null;
-            this.hoveredRegion = null;
             // 換屆別整棵 regionTree 都會換掉新物件，lastEdit 記的是舊物件參照，留著會指向
             // 已經不在畫面上的舊節點，復原只會是無效操作，一併清掉。
             this.lastEdit = null;
@@ -1566,7 +1565,6 @@ function predictionMap() {
 
             this.drillPath = [];
             this.selectedRegion = null;
-            this.hoveredRegion = null;
             this.insetMaps = teardownInsetMaps(this.insetMaps);
             this.renderCurrentLevel();
             this.initInsetMaps();
@@ -1589,7 +1587,6 @@ function predictionMap() {
 
             this.drillPath = [];
             this.selectedRegion = null;
-            this.hoveredRegion = null;
             this.insetMaps = teardownInsetMaps(this.insetMaps);
             this.renderCurrentLevel();
             this.initInsetMaps();
@@ -1679,15 +1676,6 @@ function predictionMap() {
 
         wireInteractions(map, layerId) {
             map.on('click', layerId, (e) => this.onRegionClick(e));
-            map.on('mousemove', layerId, (e) => this.onRegionHover(e));
-            map.on('mouseleave', layerId, () => { this.hoveredRegion = null; });
-
-            // 手機沒有滑鼠、不會觸發 mouseleave：一根手指點下去 MapLibre 會合成一次
-            // mousemove（設定 hoveredRegion、跳出 tooltip），但手指放開後沒有對應的
-            // 「滑出」事件，tooltip 會卡在畫面上蓋住地圖，直到下次點別的地方才會換掉
-            // （不會自己消失）。touchend/touchcancel 直接清掉 hoveredRegion 解決。
-            map.on('touchend', layerId, () => { this.hoveredRegion = null; });
-            map.on('touchcancel', layerId, () => { this.hoveredRegion = null; });
         },
 
         /**
@@ -1770,11 +1758,6 @@ function predictionMap() {
             return candidateLabelFrom(this.candidates, candidacyId);
         },
 
-        /** hover tooltip 改列「得票率 >5% 或主要政黨候選人」，見 notableResults() 註解。 */
-        notableResults(region) {
-            return region?.results ? notableResultsOf(region.results, this.candidates) : [];
-        },
-
         /**
          * 點行政區：還沒到填色層級、且這個節點真的有子行政區可以繼續鑽，就往下鑽一層；
          * 到填色層級（或資料只到這裡，見 effectiveFillNodes() 註解）就直接循環切換這個
@@ -1788,10 +1771,6 @@ function predictionMap() {
         },
 
         /**
-         * onRegionClick() 原本直接讀 MapLibre 的點擊事件；抽成吃 regionId 的版本，讓鍵盤
-         * 可操作的行政區清單（見 index.html 的 keyboard-region-list）能重用同一套鑽層/
-         * 切換候選人邏輯，不用滑鼠事件也能做到跟點地圖一樣的操作（A11Y-01）。
-         *
          * UX-01：原本「點一下」同時做兩件事——選取顯示明細、也把猜測候選人循環到下一個，
          * 使用者只是想看某個行政區目前的明細（尤其是鍵盤清單，focus 移過去就想看數字），
          * 卻會不小心把猜測改掉。改成：還沒選取這個行政區的第一次點擊只選取/顯示明細，不動
@@ -1808,7 +1787,6 @@ function predictionMap() {
             if (remainingDepth > 0 && region.children && region.children.length) {
                 this.drillPath.push(region);
                 this.selectedRegion = null;
-                this.hoveredRegion = null;
                 this.insetMaps = teardownInsetMaps(this.insetMaps);
                 this.renderCurrentLevel();
                 return;
@@ -1848,25 +1826,10 @@ function predictionMap() {
             this.renderCurrentLevel();
         },
 
-        // hover 只顯示簡略資訊（行政區名+領先候選人），跟著滑鼠移動的小 tooltip；完整明細
-        // 留給點擊後的側邊欄，避免滑過去一堆資訊反而看不清楚。results 已經是後端依票數
-        // DESC 排序過的，results[0] 就是領先候選人，不用另外算。
-        onRegionHover(e) {
-            this.hoveredRegion = this.currentRegions.find((r) => r.region_id === smallestFeature(e.features).properties.region_id) ?? null;
-
-            updateTooltipPosition(this, document.getElementById('map'), e.originalEvent.clientX, e.originalEvent.clientY);
-        },
-
-        /** 鍵盤清單用的 hover 等效操作（focus 觸發），不需要滑鼠座標，tooltip 維持不顯示。 */
-        hoverRegionById(regionId) {
-            this.hoveredRegion = this.currentRegions.find((r) => r.region_id === regionId) ?? null;
-        },
-
         /** 麵包屑：index=-1 回到顯示層級的頂層（全國攤平），其餘是 drillPath 的 index。 */
         goToBreadcrumb(index) {
             this.drillPath = index < 0 ? [] : this.drillPath.slice(0, index + 1);
             this.selectedRegion = null;
-            this.hoveredRegion = null;
             this.insetMaps = teardownInsetMaps(this.insetMaps);
             this.renderCurrentLevel();
             this.initInsetMaps();
@@ -1902,9 +1865,9 @@ function predictionMap() {
          * 標籤依它們在畫面上相對 #map 的實際位置，合成進同一張 offscreen canvas 再輸出，
          * 匯出的圖片才會跟畫面上看到的一致。
          *
-         * exportImage()（下載）跟 shareImage()（分享，見該函式註解）共用這段合成邏輯，
-         * 只有拿到 canvas 之後要做什麼不同，回傳 null 代表這次呼叫該放棄（未就緒或下載/
-         * 分享途中選舉被切換，見下方註解），呼叫端看到 null 直接 return。
+         * shareImage()/copyImageToClipboard() 共用這段合成邏輯，只有拿到 canvas 之後要做
+         * 什麼不同，回傳 null 代表這次呼叫該放棄（未就緒或分享途中選舉被切換，見下方註解），
+         * 呼叫端看到 null 直接 return。
          */
         async composeExportCanvas() {
             if (this.status !== 'ready' || ! this.map) return null;
@@ -2032,14 +1995,6 @@ function predictionMap() {
             this.shareStatus = message;
             clearTimeout(this._shareStatusTimer);
             this._shareStatusTimer = setTimeout(() => { this.shareStatus = ''; }, 4000);
-        },
-
-        async exportImage() {
-            const canvas = await this.composeExportCanvas();
-
-            if (! canvas) return;
-
-            this.downloadCanvas(canvas, this.exportFileName());
         },
 
         /**
@@ -2548,11 +2503,22 @@ function drillDownMap() {
             this.selectRegionById(smallestFeature(e.features).properties.region_id);
         },
 
-        /** 同 predictionMap() 的 selectRegionById()：讓鍵盤行政區清單重用鑽層/選取邏輯（A11Y-01）。 */
+        /**
+         * 手機沒有 hover，原本「點一下就鑽進去」會讓人根本來不及看到這個行政區的得票就
+         * 跳到下一層。改成跟 predictionMap() selectRegionById() 同一套 UX-01 節奏：第一次
+         * 點只選取、側欄顯示明細，不鑽層；已經選取的行政區（側欄顯示的就是它）再點一次，
+         * 才視為使用者確認要鑽進去看底下的行政區——不用真的做滑鼠/觸控 dblclick 計時
+         * （難跟系統手勢、時間閾值打架），點兩下的節奏在觸控/鍵盤上都一樣好用。
+         */
         selectRegionById(regionId) {
             const region = this.currentRegions.find((r) => r.region_id === regionId);
 
             if (! region) return;
+
+            if (this.selectedRegion?.region_id !== regionId) {
+                this.selectedRegion = region;
+                return;
+            }
 
             if (region.children && region.children.length) {
                 this.path.push(region);
@@ -2561,9 +2527,6 @@ function drillDownMap() {
                 // 不會再觸發 mousemove——不清掉的話 tooltip 會卡在鑽層前那個行政區的舊資料。
                 this.hoveredRegion = null;
                 this.renderCurrentLevel();
-            } else {
-                // 已經是最細層級（村里），沒有再往下鑽的空間，改成側欄顯示完整得票明細。
-                this.selectedRegion = region;
             }
         },
 
