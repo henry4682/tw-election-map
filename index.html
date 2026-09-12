@@ -76,6 +76,7 @@
                 </label>
                 <p class="hint" x-show="fillLevelIndex > displayLevelIndex" x-cloak>顯示的是<span x-text="levels[displayLevelIndex].label"></span>形狀，底色是底下<span x-text="fillLevelLabel"></span>猜測結果聚合出來的多數決；點一個<span x-text="levels[displayLevelIndex].label"></span>會鑽入看底下的<span x-text="fillLevelLabel"></span>猜測</p>
                 <button @click="resetToActual()">重設為實際結果</button>
+                <button type="button" class="editor-toggle" @click="editorOpen = ! editorOpen" :aria-expanded="String(editorOpen)">畫筆與席次</button>
                 <button
                     x-show="typeof navigator.share === 'function'"
                     x-cloak
@@ -102,12 +103,47 @@
             <div class="layout prediction-layout" x-show="status === 'ready'" x-cloak>
                 <div id="map" class="map-pane"></div>
 
-                <aside class="sidebar-pane prediction-sidebar">
-                    <section class="prediction-overview" aria-labelledby="prediction-overview-title">
+                <section class="prediction-overview prediction-overview-float" aria-labelledby="prediction-overview-title">
+                    <div class="prediction-overview-heading">
+                        <div>
+                            <p class="eyebrow">即時預測</p>
+                            <h2 id="prediction-overview-title" x-text="election ? electionLabel(election) : ''"></h2>
+                        </div>
+                        <strong class="prediction-total mono" x-text="`${predictionSummaryTotal} ${election?.type === 'legislator' ? '席' : `個${fillLevelLabel}`}`"></strong>
+                    </div>
+
+                    <div class="prediction-compact-summary">
+                        <div class="prediction-donut" :style="predictionDonutStyle" role="img" :aria-label="predictionDonutLabel">
+                            <div class="prediction-donut-hole">
+                                <strong class="mono" x-text="predictionSummaryTotal"></strong>
+                                <span x-text="election?.type === 'legislator' ? '總席次' : `個${fillLevelLabel}`"></span>
+                            </div>
+                        </div>
+                        <ol class="prediction-ranking">
+                            <template x-for="entry in predictionSummaryEntries.slice(0, 4)" :key="entry.party_name">
+                                <li>
+                                    <span class="swatch" :style="`background:${entry.color}`"></span>
+                                    <span class="prediction-party-name" x-text="entry.party_name"></span>
+                                    <strong class="mono" x-text="entry.count"></strong>
+                                </li>
+                            </template>
+                        </ol>
+                    </div>
+                </section>
+
+                <aside class="sidebar-pane prediction-sidebar" :class="{ 'is-open': editorOpen }">
+                    <div class="prediction-editor-header">
+                        <div>
+                            <p class="eyebrow">預測工具</p>
+                            <strong>畫筆與席次</strong>
+                        </div>
+                        <button type="button" class="prediction-editor-close" @click="editorOpen = false" aria-label="關閉預測工具">×</button>
+                    </div>
+                    <section class="prediction-overview prediction-overview-editor" aria-label="完整預測統計">
                         <div class="prediction-overview-heading">
                             <div>
                                 <p class="eyebrow">即時預測</p>
-                                <h2 id="prediction-overview-title" x-text="election?.name"></h2>
+                                <h2 x-text="election ? electionLabel(election) : ''"></h2>
                             </div>
                             <strong class="prediction-total mono" x-text="`${predictionSummaryTotal} ${election?.type === 'legislator' ? '席' : `個${fillLevelLabel}`}`"></strong>
                         </div>

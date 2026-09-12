@@ -1285,6 +1285,7 @@ function predictionMap() {
         geometryStore: null,
         elections: [],
         selectedElectionId: null,
+        editorOpen: false,
 
         displayLevelIndex: 0,
         fillLevelIndex: 0,
