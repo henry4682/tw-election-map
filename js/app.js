@@ -767,6 +767,22 @@ function hslToHex(h, s, l) {
  * 色相的「淺版」而不是「趨近灰白」，各政黨之間即使在領先幅度小的行政區也維持可辨識的色相
  * 差異。
  */
+/**
+ * duplicatePartyShade() 用：固定色相/飽和度，明度往還沒被佔滿的方向位移一階（太亮就往暗
+ * 移，太暗就往亮移，不會一直朝同一個方向衝到變白/變黑看不出顏色），跟 shareToFillColor()
+ * 「只調明度、保留色相」是同一個原則，只是那個是連續依得票率調，這個是每次複製固定跳一階。
+ */
+function nextShadeColor(hexColor) {
+    const { h, s, l } = rgbToHsl(hexToRgb(hexColor));
+    const step = 0.14;
+    const minL = 0.16;
+    const maxL = 0.84;
+
+    const nextL = l + step > maxL ? Math.max(minL, l - step) : l + step;
+
+    return hslToHex(h, s, Math.min(maxL, Math.max(minL, nextL)));
+}
+
 function shareToFillColor(hexColor, share) {
     const ratio = shareToBlendRatio(share);
     const { h, s, l } = rgbToHsl(hexToRgb(hexColor));
@@ -1039,16 +1055,33 @@ const CUSTOM_PARTIES_STORAGE_KEY = 'tw-election-map:custom-parties';
 // township_mayor（鄉鎮市/直轄市原住民區長）頂層直接是「鄉鎮市區」，底下少一層縣市，只有
 // 「村里」一層可鑽，一樣適用同一套「顯示層級/填色層級」機制（見下面 levels getter 依每筆
 // 資料自己的 level 欄位決定各層級要顯示的名稱，層數不用寫死）。
+// 不分區/山地原民/平地原民立委沒有選區地理邊界，「一格一格猜」這種地圖互動對這三類沒有
+// 意義（全國不分區的得票不會因為使用者住哪個村里而不同）——這三類改成在區域立委畫面旁邊
+// 讓使用者直接輸入政黨席次（見 predictionMap() 的 otherLegislatorCategories／
+// OTHER_LEGISLATOR_TYPES），不再是地圖選單裡可以切換的獨立項目；歷屆結果地圖
+// （drillDownMap()）不受影響，還是照常列出這三類的歷史地圖。
 const PREDICT_ELECTION_TYPES = new Set([
     'president',
-    'legislator_at_large',
-    'legislator_mountain_indigenous',
-    'legislator_plains_indigenous',
     'county_mayor',
     'legislator',
     'merged',
     'township_mayor',
 ]);
+
+/** 見 PREDICT_ELECTION_TYPES 註解：這三類立委改用方格塗色，不走地圖。 */
+const OTHER_LEGISLATOR_TYPES = [
+    'legislator_at_large',
+    'legislator_mountain_indigenous',
+    'legislator_plains_indigenous',
+];
+
+// 憲法增修條文第 4 條規定的固定席次，2008 年第 7 屆立委選制改革後沿用至今沒再變過
+// （不像區域立委席次會隨行政區劃調整），直接寫死，不用另外從資料算。
+const OTHER_LEGISLATOR_SEAT_COUNTS = {
+    legislator_at_large: 34,
+    legislator_mountain_indigenous: 3,
+    legislator_plains_indigenous: 3,
+};
 
 // 選單只列每種類型最新一屆（見 init()），不需要靠年份/選舉全名區分同類型的不同屆，選單
 // 選項改成這份短名稱，比原始 election.name（帶年份+完整官方選舉名稱，兩個資訊在只列一屆
@@ -1270,17 +1303,147 @@ function predictionMap() {
         shareStatus: '',
         _shareStatusTimer: null,
 
-        // 「指定政黨給選取行政區」用：currentLyParties 是現任立院有席次的政黨（唯讀，來自
-        // current-ly-parties.json）；customParties 是使用者自己加的，存 localStorage
-        // （純前端狀態，不寫回資料庫，見 CLAUDE.md 前端規則）。
+        // 「指定政黨給選取行政區」用：currentLyParties 是現任立院有席次的政黨，起始值來自
+        // current-ly-parties.json，但這裡存的是複製出來的獨立副本，使用者可以直接改名字/
+        // 顏色（見 start()）——「政黨」跟「候選人」故意模糊掉，改名成候選人名字一樣能用；
+        // _defaultLyParties 是沒被改過的原始版本，resetToActual() 用來復原。customParties
+        // 是使用者自己加的，存 localStorage（純前端狀態，不寫回資料庫，見 CLAUDE.md 前端
+        // 規則）。
         currentLyParties: [],
+        _defaultLyParties: [],
         customParties: [],
         newPartyLabel: '',
         newPartyColor: '#6b7280',
 
-        /** 政黨選取清單：現任立院政黨 + 使用者自訂政黨，兩者用同一個按鈕清單顯示。 */
+        /** 政黨選取清單：現任立院政黨 + 使用者自訂政黨，兩者用同一份清單給塗格子/查詢用。 */
         get assignableParties() {
             return [...this.currentLyParties, ...this.customParties];
+        },
+
+        /**
+         * 「複製一份、換個深淺」：同一個政黨底下想拆成好幾個候選人時，不用每次手動調色，
+         * 固定色相/飽和度只把明度往還沒被佔滿的方向位移一階，多次複製會在同一色系裡逐漸
+         * 展開幾種深淺；使用者對顏色不滿意還是可以自己用色盤調。新項目名稱加一個沒被佔用
+         * 的編號後綴，避免撞名——assignableParties 好幾個地方靠 party_name 當識別
+         * （selectParty()/paintOtherLegislatorSeat() 等），撞名會讓查詢查到錯的那筆。
+         */
+        duplicatePartyShade(party, list = this.currentLyParties) {
+            const index = list.indexOf(party);
+
+            if (index === -1) return;
+
+            const baseName = party.party_name.trim();
+            let n = 2;
+
+            while (list.some((p) => p.party_name === `${baseName} ${n}`)) n += 1;
+
+            // currentLyParties 的 x-for 用 p.id 當 :key（見 start()），新複製出來的這筆
+            // 沒有 id 的話會是 undefined——好幾筆 undefined 撞在一起，Alpine 沒辦法正確
+            // 分辨是哪一筆，畫面可能整筆不出現或跟別筆共用/蓋掉 DOM，複製看起來像「沒有
+            // 反應」。customParties 的 x-for 用 index 當 key 不受影響，但補一個 id 統一
+            // 兩邊的物件形狀，不用另外分兩種寫法。
+            list.splice(index + 1, 0, {
+                id: `${party.id ?? baseName}-dup-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                party_name: `${baseName} ${n}`,
+                color: nextShadeColor(party.color),
+            });
+
+            if (list === this.customParties) this.persistCustomParties();
+        },
+
+        removeCurrentLyParty(party) {
+            const index = this.currentLyParties.indexOf(party);
+
+            if (index !== -1) this.currentLyParties.splice(index, 1);
+        },
+
+        // 見 OTHER_LEGISLATOR_TYPES 註解：不分區/山地原民/平地原民立委不走地圖，改成
+        // 方格塗色——每一類固定席次數（OTHER_LEGISLATOR_SEAT_COUNTS）攤成一排格子，跟
+        // 「指定政黨給選取的OO」共用同一份政黨清單/同一個「目前選取政黨」狀態
+        // （activePartyName，見下方），不用另外列一份重複的政黨按鈕。跟區域立委地圖猜
+        // 出來的席次加總，湊出整個立法院的預測組成（見 index.html 對應區塊、
+        // totalLegislatorSeatsByParty()）。只在 election.type === 'legislator'（區域
+        // 立委）時顯示，見 loadElection() 重設。
+        otherLegislatorCategories: OTHER_LEGISLATOR_TYPES.map((type) => ({
+            type,
+            label: PREDICT_ELECTION_TYPE_LABELS[type],
+            // 每格是 null（還沒塗）或 {party_name, color}，陣列長度=固定席次數，不會變動。
+            squares: Array.from({ length: OTHER_LEGISLATOR_SEAT_COUNTS[type] }, () => null),
+        })),
+
+        // 「目前選取政黨」：兩種用途共用同一個狀態——(1) 有選取行政區時點政黨清單，直接
+        // 指定給那個行政區（見 selectParty()，沿用原本 assignPartyToSelected() 的一次性
+        // 套用行為）；(2) 不分區/山地/平地原民立委塗格子時當畫筆（見
+        // paintOtherLegislatorSeat()）。原本兩處各自列一份政黨按鈕清單，使用者要用同一個
+        // 政黨還得在兩份重複清單裡各點一次；合併成一份清單、一個狀態後，選一次到處都能用。
+        activePartyName: null,
+
+        /**
+         * 政黨清單按鈕的唯一點擊入口：先切換 activePartyName（給塗格子當畫筆用），有選取
+         * 行政區的話再額外套用到地圖上（沿用 assignPartyToSelected() 原本的行為——每次
+         * 點擊都直接指定，不管 active 狀態是切上還是切下，跟地圖塗色是兩種獨立語意，
+         * 「取消畫筆」不代表使用者想撤銷剛剛對行政區做的指定）。
+         */
+        selectParty(party) {
+            this.activePartyName = this.activePartyName === party.party_name ? null : party.party_name;
+
+            if (this.selectedRegion) this.assignPartyToSelected(party);
+        },
+
+        /**
+         * 見 otherLegislatorCategories／activePartyName 註解：沒選政黨時點格子等同橡皮擦
+         * （清空，不管原本是誰的顏色）；已選政黨時點「已經是同一個政黨」的格子視為使用者
+         * 想取消，切回空白，跟地圖那邊「再點一次切換」的手感不同、但這裡格子只有兩種狀態
+         * （空白/某政黨）不是候選人循環，直接 toggle 比再點一次跳下一個政黨更直覺。
+         */
+        paintOtherLegislatorSeat(category, index) {
+            const brush = this.activePartyName
+                ? this.assignableParties.find((p) => p.party_name === this.activePartyName)
+                : null;
+
+            if (! brush) {
+                category.squares[index] = null;
+                return;
+            }
+
+            const current = category.squares[index];
+            category.squares[index] = current?.party_name === brush.party_name
+                ? null
+                : { party_name: brush.party_name, color: brush.color };
+        },
+
+        /** 見 index.html：每一類格子上方顯示「已塗 X／固定席次數」，不用另外數。 */
+        otherLegislatorPaintedCount(category) {
+            return category.squares.filter((s) => s).length;
+        },
+
+        /**
+         * 區域立委地圖猜出來的政黨席次（partyLeadCountsFor() 本來是給匯出圖片標題用的，
+         * 這裡拿來重用：this.regionTree 頂層每個節點就是一個選區＝一席，跟匯出圖片算
+         * 「頂層每個行政區對應哪個政黨」是同一件事）＋使用者塗好的三類格子，同一個政黨
+         * 名稱的席次直接加總，湊出整個立法院的預測總表，依席次由多到少排序。
+         */
+        get totalLegislatorSeatsByParty() {
+            if (this.election?.type !== 'legislator') return [];
+
+            const totals = new Map();
+
+            for (const { partyName, color, count } of partyLeadCountsFor(this.regionTree, this.candidates)) {
+                totals.set(partyName, { party_name: partyName, color, seats: count });
+            }
+
+            for (const category of this.otherLegislatorCategories) {
+                for (const square of category.squares) {
+                    if (! square) continue;
+
+                    const existing = totals.get(square.party_name);
+
+                    if (existing) existing.seats += 1;
+                    else totals.set(square.party_name, { party_name: square.party_name, color: square.color, seats: 1 });
+                }
+            }
+
+            return [...totals.values()].sort((a, b) => b.seats - a.seats);
         },
 
         /**
@@ -1374,8 +1537,13 @@ function predictionMap() {
         async start() {
             this.status = 'loading';
 
+            // 見 currentLyParties／resetToActual() 註解：這裡要各自複製一份獨立物件，不能
+            // 直接用 partiesResult.parties 那個模組層級共用陣列——使用者會直接改名字/顏色，
+            // 共用陣列被改到會連帶影響其他也讀這份快取的呼叫端。_defaultLyParties 額外存一份
+            // 沒被改過的版本，resetToActual() 用它復原。
             const partiesResult = await loadCurrentLyParties();
-            this.currentLyParties = partiesResult.parties;
+            this.currentLyParties = partiesResult.parties.map((p, i) => ({ ...p, id: `ly-${i}` }));
+            this._defaultLyParties = this.currentLyParties.map((p) => ({ ...p }));
             this.loadCustomPartiesFromStorage();
 
             let all;
@@ -1540,6 +1708,11 @@ function predictionMap() {
             // 換屆別整棵 regionTree 都會換掉新物件，lastEdit 記的是舊物件參照，留著會指向
             // 已經不在畫面上的舊節點，復原只會是無效操作，一併清掉。
             this.lastEdit = null;
+            // 不分區/山地原民/平地原民立委塗好的格子是針對「這一次選舉」的猜測，換屆別
+            // （或切去總統/縣市長）沒有意義繼續留著，一併清空；面板本身只在
+            // election.type === 'legislator' 時才會顯示（見 totalLegislatorSeatsByParty()）。
+            this.clearOtherLegislatorSeats();
+            this.activePartyName = null;
             this.status = 'ready';
 
             rebuildMap(this, {
@@ -1853,10 +2026,20 @@ function predictionMap() {
             scrollToMapPane('map');
         },
 
+        /** 「重設為實際結果」：地圖猜測、政黨改名/改色、席次格子塗色，全部退回剛載入時的狀態。 */
         resetToActual() {
             this.initGuesses(this.regionTree);
             this.lastEdit = null;
+            this.currentLyParties = this._defaultLyParties.map((p) => ({ ...p }));
+            this.activePartyName = null;
+            this.clearOtherLegislatorSeats();
             this.renderCurrentLevel();
+        },
+
+        clearOtherLegislatorSeats() {
+            for (const category of this.otherLegislatorCategories) {
+                category.squares = category.squares.map(() => null);
+            }
         },
 
         /**

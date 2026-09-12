@@ -419,6 +419,18 @@ header h1 {
     padding: 0;
 }
 
+/* 不分區/山地原民/平地原民立委席次（見 index.html「其他立委席次」區塊：畫筆政黨清單＋
+   方格塗色），三類各自一個小標題＋方格，跟同一個 section 裡的其他內容拉開一點距離。 */
+.other-legislator-category {
+    margin-bottom: 0.75rem;
+}
+
+.other-legislator-category h3 {
+    font-size: 0.85rem;
+    margin: 0 0 0.3rem;
+    color: var(--text-secondary);
+}
+
 .legend li {
     display: flex;
     align-items: center;
@@ -559,33 +571,88 @@ header h1 {
 }
 
 /*
- * 政黨選取清單（predictionMap 的「指定政黨給選取縣市」區塊）：整條列當按鈕點擊，跟
- * .legend li 純顯示用不一樣，所以另外給 padding/hover 而不是直接重用 .legend li。
+ * 政黨選取清單（predictionMap 的「選一個政黨」區塊）：名稱/顏色都是直接可編輯的 input，
+ * 不是單純顯示用的 .legend li，另外給 padding/排列；.active 標示目前選取政黨（跟
+ * .mode-toggle/.election-item 的 active 是同一種強調色語言），flex-wrap 讓四個控制項
+ * （顏色/名稱/套用/複製/移除）在窄螢幕上換行，不會被擠爆。
  */
-.party-pick {
+.party-pick-row {
     display: flex;
     align-items: center;
-    gap: 0.4rem;
-    width: 100%;
+    flex-wrap: wrap;
+    gap: 0.3rem;
     margin: 0 0 0.3rem;
-    padding: 0.35rem 0.5rem;
+    padding: 0.3rem 0.4rem;
     border: 1px solid var(--border);
-    background: var(--panel);
-    color: var(--text-secondary);
     border-radius: 4px;
-    cursor: pointer;
-    font-size: 0.85rem;
-    text-align: left;
 }
 
-.party-pick:hover {
+.party-pick-row.active {
+    border-color: var(--text);
     background: var(--panel-alt);
-    border-color: var(--border-strong);
-    color: var(--text);
 }
 
-.party-pick .pct {
-    margin-left: auto;
+.party-pick-row input[type='color'] {
+    width: 1.6rem;
+    height: 1.6rem;
+    padding: 0;
+    border: 1px solid var(--border-strong);
+    border-radius: 4px;
+    background: var(--panel);
+    cursor: pointer;
+}
+
+.party-name-input {
+    flex: 1;
+    min-width: 4rem;
+    padding: 0.3rem 0.4rem;
+    border: 1px solid var(--border-strong);
+    background: var(--panel);
+    color: var(--text);
+    border-radius: 4px;
+    font-size: 0.85rem;
+}
+
+.party-apply,
+.party-duplicate {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    width: auto;
+    margin: 0;
+    padding: 0.3rem 0.5rem;
+    font-size: 0.82rem;
+}
+
+.party-duplicate {
+    padding: 0.3rem 0.45rem;
+}
+
+/*
+ * 不分區/山地原民/平地原民立委席次改成方格塗色（見 index.html「其他立委席次」區塊）：
+ * 固定席次數攤成一排小方格，點格子上色，不用像地圖那樣保留地理形狀，純粹當「有幾席」的
+ * 視覺化計數器。方格夠小、用 flex-wrap 讓多席次的不分區（34 格）自然換行，不用横向捲動。
+ */
+.seat-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.2rem;
+    margin: 0 0 0.75rem;
+}
+
+.seat-square {
+    width: 1.3rem;
+    height: 1.3rem;
+    padding: 0;
+    margin: 0;
+    border: 1px solid var(--border-strong);
+    border-radius: 3px;
+    background: var(--panel);
+    cursor: pointer;
+}
+
+.seat-square:hover {
+    border-color: var(--text-secondary);
 }
 
 /**
@@ -615,6 +682,20 @@ header h1 {
 .predict-controls {
     flex-wrap: wrap;
     row-gap: 0.4rem;
+}
+
+/*
+ * 重設/復原/分享/複製圖片這幾個按鈕跟選舉/層級下拉選單放在同一條 .toolbar 橫排，但
+ * 全域 button 規則（見下方）是給側欄那種直式清單設計的 width:100% 區塊按鈕，直接搬進
+ * 橫排 toolbar 會讓每個按鈕自己撐滿一整行、疊成一長串，在窄螢幕上特別明顯。這裡覆寫成
+ * 跟 .level-picker select 同一種內嵌尺寸。
+ */
+.predict-controls button {
+    display: inline-block;
+    width: auto;
+    margin: 0;
+    padding: 0.3rem 0.6rem;
+    font-size: 0.82rem;
 }
 
 .add-party-form {

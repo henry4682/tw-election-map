@@ -152,8 +152,8 @@ describe('summarizePredictionState (UX-02: exported image needs a legend + actua
 
         assert.equal(hasEdits, false);
         assert.deepEqual(legend, [
-            { label: '甲', color: '#2a78d6' },
-            { label: '乙', color: '#d62a2a' },
+            { label: '甲黨', color: '#2a78d6' },
+            { label: '乙黨', color: '#d62a2a' },
         ]);
     });
 

@@ -112,45 +112,84 @@
                 <aside class="sidebar-pane">
                     <section>
                         <h2>點<span x-text="fillLevelLabel"></span>切換預測候選人</h2>
-                        <p class="hint">先點一下<span x-text="fillLevelLabel"></span>查看明細，已經選取時再點一次才會切換猜測候選人；顏色深淺代表該候選人的實際得票率，越深代表贏得越多</p>
+                        <p class="hint">先點一下查看明細，再點一次切換候選人；顏色深淺代表得票率</p>
                     </section>
 
                     <section>
-                        <h2>或指定政黨給選取的<span x-text="fillLevelLabel"></span></h2>
-                        <p class="hint" x-show="! selectedRegion" x-cloak>先點地圖選一個<span x-text="fillLevelLabel"></span>，才能在下面指定政黨（跟切換候選人是兩種獨立的塗色方式，以最後做的動作為準）</p>
-                        <ul class="legend" x-show="assignableParties.length" x-cloak>
-                            <template x-for="p in assignableParties" :key="p.party_name">
-                                <li>
-                                    <button
-                                        type="button"
-                                        class="party-pick"
-                                        :disabled="! selectedRegion"
-                                        @click="assignPartyToSelected(p)"
-                                    >
-                                        <span class="swatch" :style="`background:${p.color}`"></span>
-                                        <span x-text="p.party_name"></span>
+                        <h2>選一個政黨</h2>
+                        <p class="hint">名稱、顏色都可以直接改——改成候選人的名字，這裡就變成「選一個人」；點「套用」反白選取：有選取<span x-text="fillLevelLabel"></span>就直接指定給它<span x-show="election?.type === 'legislator'" x-cloak>，也可以當畫筆塗下面的格子</span>。⧉ 是複製一份、自動換個深淺，方便同一個政黨拆成好幾個候選人</p>
+                        <ul class="legend party-edit-list" x-show="currentLyParties.length" x-cloak>
+                            <template x-for="p in currentLyParties" :key="p.id">
+                                <li class="party-pick-row" :class="{ active: activePartyName === p.party_name }">
+                                    <input type="color" x-model="p.color" title="改顏色" aria-label="改顏色">
+                                    <input type="text" x-model="p.party_name" maxlength="20" class="party-name-input" aria-label="政黨或候選人名稱">
+                                    <button type="button" class="party-apply" @click="selectParty(p)">
                                         <strong x-text="partyTally[p.party_name] ?? 0"></strong>
                                         <span x-text="`個${fillLevelLabel}`"></span>
                                     </button>
+                                    <button type="button" class="party-duplicate" title="複製一份、換個深淺" @click="duplicatePartyShade(p)">⧉</button>
+                                    <button type="button" class="remove-party" @click="removeCurrentLyParty(p)">移除</button>
                                 </li>
                             </template>
                         </ul>
 
                         <div class="add-party-form">
-                            <input type="text" placeholder="自訂政黨名稱" aria-label="自訂政黨名稱" x-model="newPartyLabel" maxlength="20" @keydown.enter="addCustomParty()">
-                            <input type="color" x-model="newPartyColor" title="自訂政黨顏色">
+                            <input type="text" placeholder="自訂政黨或候選人名稱" aria-label="自訂政黨或候選人名稱" x-model="newPartyLabel" maxlength="20" @keydown.enter="addCustomParty()">
+                            <input type="color" x-model="newPartyColor" title="自訂顏色">
                             <button type="button" @click="addCustomParty()">新增</button>
                         </div>
-                        <ul class="legend" x-show="customParties.length" x-cloak>
+                        <ul class="legend party-edit-list" x-show="customParties.length" x-cloak>
                             <template x-for="(p, i) in customParties" :key="p.party_name + i">
-                                <li>
-                                    <span class="swatch" :style="`background:${p.color}`"></span>
-                                    <span x-text="p.party_name"></span>
+                                <li class="party-pick-row" :class="{ active: activePartyName === p.party_name }">
+                                    <input type="color" x-model="p.color" title="改顏色" aria-label="改顏色" @change="persistCustomParties()">
+                                    <input type="text" x-model="p.party_name" maxlength="20" class="party-name-input" aria-label="政黨或候選人名稱" @change="persistCustomParties()">
+                                    <button type="button" class="party-apply" @click="selectParty(p)">
+                                        <strong x-text="partyTally[p.party_name] ?? 0"></strong>
+                                        <span x-text="`個${fillLevelLabel}`"></span>
+                                    </button>
+                                    <button type="button" class="party-duplicate" title="複製一份、換個深淺" @click="duplicatePartyShade(p, customParties)">⧉</button>
                                     <button type="button" class="remove-party" @click="removeCustomParty(i)">移除</button>
                                 </li>
                             </template>
                         </ul>
                         <p class="hint">自訂政黨存在瀏覽器（localStorage），只有這個瀏覽器看得到，重新整理不會消失</p>
+                    </section>
+
+                    <section x-show="election?.type === 'legislator'" x-cloak>
+                        <h2>不分區／山地原民／平地原民立委席次</h2>
+                        <p class="hint">這三類沒有選區可以在地圖上猜，改成點格子塗色：先在上面「選一個政黨」，再點下面的格子塗上去；再點一次同一個政黨的格子會變回空白，沒選政黨時點格子直接清空（橡皮擦）</p>
+                        <template x-for="category in otherLegislatorCategories" :key="category.type">
+                            <div class="other-legislator-category">
+                                <h3 x-text="`${category.label}（已塗 ${otherLegislatorPaintedCount(category)}／${category.squares.length} 席）`"></h3>
+                                <div class="seat-grid">
+                                    <template x-for="(s, i) in category.squares" :key="i">
+                                        <button
+                                            type="button"
+                                            class="seat-square"
+                                            :style="s ? `background:${s.color}` : ''"
+                                            :title="s ? s.party_name : '空白'"
+                                            :aria-label="`${category.label}第 ${i + 1} 席，${s ? s.party_name : '空白'}`"
+                                            @click="paintOtherLegislatorSeat(category, i)"
+                                        ></button>
+                                    </template>
+                                </div>
+                            </div>
+                        </template>
+                    </section>
+
+                    <section x-show="totalLegislatorSeatsByParty.length" x-cloak>
+                        <h2>立法院預測總席次</h2>
+                        <p class="hint">區域立委席次直接算地圖上每個選區目前猜的政黨，加上上面塗好的不分區／山地原民／平地原民格子</p>
+                        <ul class="legend">
+                            <template x-for="t in totalLegislatorSeatsByParty" :key="t.party_name">
+                                <li>
+                                    <span class="swatch" :style="`background:${t.color}`"></span>
+                                    <span x-text="t.party_name"></span>
+                                    <strong x-text="t.seats"></strong>
+                                    <span>席</span>
+                                </li>
+                            </template>
+                        </ul>
                     </section>
 
                     <section x-show="selectedRegion" x-cloak>
