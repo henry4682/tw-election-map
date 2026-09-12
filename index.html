@@ -153,25 +153,26 @@
                     </section>
 
                     <section>
-                        <h2>選一個政黨</h2>
-                        <p class="hint">名稱、顏色都可以直接改——改成候選人的名字，這裡就變成「選一個人」；點「套用」拿畫筆：反白後直接去地圖上點<span x-text="fillLevelLabel"></span>塗色<span x-show="election?.type === 'legislator'" x-cloak>，也可以拿去塗下面的格子</span>；有選取<span x-text="fillLevelLabel"></span>時點「套用」則是直接指定給它。右邊幾個小色塊是同色系不同深淺，點一個就複製一份候選人，方便同一個政黨拆成好幾人</p>
+                        <h2>先選畫筆，再點地圖填色</h2>
+                        <p class="hint">點「選為畫筆」或任一深淺色塊，再直接點地圖上的<span x-text="fillLevelLabel"></span>填色<span x-show="election?.type === 'legislator'" x-cloak>；同一支畫筆也能塗下面三類立委席次格</span>。再次點已選畫筆可取消；名稱與主色可以直接修改。</p>
                         <ul class="legend party-edit-list" x-show="currentLyParties.length" x-cloak>
                             <template x-for="p in currentLyParties" :key="p.id">
                                 <li class="party-pick-row" :class="{ active: activePartyName === p.party_name }">
-                                    <input type="color" x-model="p.color" title="改顏色" aria-label="改顏色">
+                                    <input type="color" x-model="p.color" title="改顏色" aria-label="改顏色" @change="activateParty(p)">
                                     <input type="text" x-model="p.party_name" maxlength="20" class="party-name-input" aria-label="政黨或候選人名稱">
                                     <button type="button" class="party-apply" @click="selectParty(p)">
-                                        <strong x-text="partyTally[p.party_name] ?? 0"></strong>
-                                        <span x-text="`個${fillLevelLabel}`"></span>
+                                        <span x-text="activePartyName === p.party_name ? '取消畫筆' : '選為畫筆'"></span>
                                     </button>
+                                    <span class="party-tally mono" x-text="`${partyTally[p.party_name] ?? 0} 個${fillLevelLabel}`"></span>
                                     <span class="shade-picker">
                                         <template x-for="shade in colorShades(p.color)" :key="shade">
                                             <button
                                                 type="button"
                                                 class="shade-swatch"
                                                 :style="`background:${shade}`"
-                                                title="複製一份候選人，用這個深淺"
-                                                @click="duplicatePartyWithColor(p, shade)"
+                                                title="用這個深淺當畫筆"
+                                                :aria-label="`選取${p.party_name}的這個深淺當畫筆`"
+                                                @click="selectPartyShade(p, shade)"
                                             ></button>
                                         </template>
                                     </span>
@@ -188,20 +189,21 @@
                         <ul class="legend party-edit-list" x-show="customParties.length" x-cloak>
                             <template x-for="(p, i) in customParties" :key="p.party_name + i">
                                 <li class="party-pick-row" :class="{ active: activePartyName === p.party_name }">
-                                    <input type="color" x-model="p.color" title="改顏色" aria-label="改顏色" @change="persistCustomParties()">
+                                    <input type="color" x-model="p.color" title="改顏色" aria-label="改顏色" @change="persistCustomParties(); activateParty(p)">
                                     <input type="text" x-model="p.party_name" maxlength="20" class="party-name-input" aria-label="政黨或候選人名稱" @change="persistCustomParties()">
                                     <button type="button" class="party-apply" @click="selectParty(p)">
-                                        <strong x-text="partyTally[p.party_name] ?? 0"></strong>
-                                        <span x-text="`個${fillLevelLabel}`"></span>
+                                        <span x-text="activePartyName === p.party_name ? '取消畫筆' : '選為畫筆'"></span>
                                     </button>
+                                    <span class="party-tally mono" x-text="`${partyTally[p.party_name] ?? 0} 個${fillLevelLabel}`"></span>
                                     <span class="shade-picker">
                                         <template x-for="shade in colorShades(p.color)" :key="shade">
                                             <button
                                                 type="button"
                                                 class="shade-swatch"
                                                 :style="`background:${shade}`"
-                                                title="複製一份候選人，用這個深淺"
-                                                @click="duplicatePartyWithColor(p, shade, customParties)"
+                                                title="用這個深淺當畫筆"
+                                                :aria-label="`選取${p.party_name}的這個深淺當畫筆`"
+                                                @click="selectPartyShade(p, shade, true)"
                                             ></button>
                                         </template>
                                     </span>

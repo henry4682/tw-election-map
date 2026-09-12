@@ -1392,16 +1392,22 @@ function predictionMap() {
         // 政黨還得在兩份重複清單裡各點一次；合併成一份清單、一個狀態後，選一次到處都能用。
         activePartyName: null,
 
-        /**
-         * 政黨清單按鈕的唯一點擊入口：先切換 activePartyName（給塗格子當畫筆用），有選取
-         * 行政區的話再額外套用到地圖上（沿用 assignPartyToSelected() 原本的行為——每次
-         * 點擊都直接指定，不管 active 狀態是切上還是切下，跟地圖塗色是兩種獨立語意，
-         * 「取消畫筆」不代表使用者想撤銷剛剛對行政區做的指定）。
-         */
+        /** 選取／取消畫筆；不修改目前查看中的行政區，真正填色一律發生在下一次點地圖時。 */
         selectParty(party) {
             this.activePartyName = this.activePartyName === party.party_name ? null : party.party_name;
+        },
 
-            if (this.selectedRegion) this.assignPartyToSelected(party);
+        /** 修改主色後直接選為畫筆，讓「選顏色→點地圖」的操作成立。 */
+        activateParty(party) {
+            this.activePartyName = party.party_name;
+        },
+
+        /** 點同色系深淺時，直接把該色設為這支畫筆並選取，不再建立另一筆候選人。 */
+        selectPartyShade(party, color, shouldPersist = false) {
+            party.color = color;
+            this.activePartyName = party.party_name;
+
+            if (shouldPersist) this.persistCustomParties();
         },
 
         /**

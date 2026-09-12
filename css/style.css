@@ -755,6 +755,18 @@ header h1 {
     font-size: 0.82rem;
 }
 
+.party-pick-row.active .party-apply {
+    border-color: var(--text);
+    background: var(--text);
+    color: var(--bg);
+}
+
+.party-tally {
+    color: var(--text-muted);
+    font-size: 0.68rem;
+    white-space: nowrap;
+}
+
 /*
  * 深淺挑選（見 index.html：colorShades() 算出來的幾個同色相不同明度選項），直接列出來
  * 點，不用像單一顆「複製」按鈕那樣每點一次才看得到下一階是什麼顏色（見 app.js
