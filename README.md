@@ -29,8 +29,7 @@ CEC（中選會）/ 內政部國土測繪中心 開放資料
               ▼
    tw-election-map（這個 repo：HTML + Alpine.js + MapLibre GL JS）
               │
-              ├── GitHub Pages
-              └── Cloudflare Workers Static Assets
+              └── GitHub Pages
 ```
 
 前端不會直接呼叫中選會或任何即時 API，也不由後端 serve 動態內容。資料整理、行政區界處理與匯出由另一個私有 Laravel/Filament 專案負責，再透過 `election:export-*` 匯出為靜態檔案。本 repository 僅包含公開部署所需的前端程式與資料，與後端執行環境完全解耦。
