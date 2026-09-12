@@ -1877,7 +1877,11 @@ function predictionMap() {
 
                 const clusters = clusterParts(geometryFor(county, this.geometryStore));
 
-                const box = createInsetBox(mapEl, label, boxSize, offsetX, 12);
+                const box = createInsetBox(mapEl, label, boxSize, offsetX, 0);
+                // 全畫面預測介面的控制列浮在左上角，inset 改固定在左下角，避免兩者互相遮擋；
+                // 用 bottom 定位也能在視窗高度改變時自動貼齊底部，不必額外重算像素座標。
+                box.style.top = 'auto';
+                box.style.bottom = '12px';
                 this.mountInsetMap(box, county, clusters[0].bbox, 14, label);
 
                 // 主要陸地以外還有其他遠方離島群組（如金門的烏坵鄉），各自疊一個巢狀小框
