@@ -1300,10 +1300,8 @@ function predictionMap() {
         drillPath: [],
         selectedRegion: null,
 
-        // 點一下只選取/查看明細，不改猜測；同一個已選取的行政區再點一次才真的循環候選人
-        // （見 selectRegionById() 註解，UX-01）。lastEdit 只記最近一次這種循環動作，供
-        // undoLastEdit() 單步復原；resetToActual()/assignPartyToSelected() 這些會蓋掉
-        // 循環結果的動作要清掉它，避免復原跳過使用者後來做的其他變更。
+        // 保留既有單步復原狀態欄位，供其他直接指定路徑清理；地圖本身在未選畫筆時只查看
+        // 明細，不再建立新的候選人循環編輯（見 selectRegionById()）。
         lastEdit: null,
 
         // 分享/下載/複製圖片這幾個動作用起來都沒有明顯的畫面變化（系統分享選單、剪貼簿
@@ -2035,17 +2033,8 @@ function predictionMap() {
         },
 
         /**
-         * UX-01：原本「點一下」同時做兩件事——選取顯示明細、也把猜測候選人循環到下一個，
-         * 使用者只是想看某個行政區目前的明細（尤其是鍵盤清單，focus 移過去就想看數字），
-         * 卻會不小心把猜測改掉。改成：還沒選取這個行政區的第一次點擊只選取/顯示明細，不動
-         * 猜測；已經選取（畫面上明細面板顯示的就是這個行政區）的情況下再點一次，才視為
-         * 使用者確認要編輯。
-         *
-         * 「拿畫筆直接塗」：上面這套 UX-01 節奏是給「先看明細再決定」的情境；但選好
-         * activePartyName 這支畫筆之後，使用者要的是跟塗立委席次格子一樣直接塗，不想先點
-         * 一次選取、確認明細、再點第二次才真的上色——見 paintRegionWithActiveParty()，
-         * 有畫筆時直接跳過 UX-01 那兩步，點一下就塗，同一格再點是切換深淺（跟其他還沒被
-         * 這支畫筆塗過的行政區共用同一個判斷）。
+         * 未選畫筆時點行政區只顯示明細，無論點幾次都不改預測；選好 activePartyName 後才
+         * 交給 paintRegionWithActiveParty() 填色。同一支畫筆重複點擊則切換領先深淺。
          */
         selectRegionById(regionId) {
             const region = this.currentRegions.find((r) => r.region_id === regionId);
@@ -2067,31 +2056,7 @@ function predictionMap() {
                 return;
             }
 
-            if (this.selectedRegion?.region_id !== regionId) {
-                this.selectedRegion = region;
-                return;
-            }
-
-            if (region.assigned_party) {
-                this.cyclePartyLeadShade(region);
-                return;
-            }
-
-            this.lastEdit = {
-                region,
-                assigned_candidacy_id: region.assigned_candidacy_id,
-                assigned_party: region.assigned_party,
-            };
-
-            const ids = region.results.map((r) => r.candidacy_id);
-            const currentIndex = ids.indexOf(region.assigned_candidacy_id);
-            region.assigned_candidacy_id = ids[(currentIndex + 1) % ids.length];
-            // 點地圖切換候選人跟「指定政黨」（見 assignPartyToSelected()）是兩條平行路徑，
-            // 各自設定同一個節點的顯示顏色——切候選人這個動作蓋掉先前指定的政黨，「最後
-            // 做的動作為準」。
-            region.assigned_party = null;
-
-            this.renderCurrentLevel();
+            this.selectedRegion = region;
         },
 
         /**
