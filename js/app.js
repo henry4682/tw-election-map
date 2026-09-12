@@ -2011,7 +2011,7 @@ function predictionMap() {
             }
 
             if (! this.drillPath.length && this.displayLevelIndex === 0 && ! this.selectedRootId) {
-                this.map.jumpTo({ center: [121, 23.7], zoom: 6.3 });
+                this.map.jumpTo({ center: [121, 23.7], zoom: 6.0 });
             } else if (data.features.length) {
                 this.map.fitBounds(unionBBox(data.features), { padding: 10, animate: false });
             }
