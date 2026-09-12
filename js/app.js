@@ -1810,7 +1810,12 @@ function predictionMap() {
                 sourceId: 'regions',
                 preserveDrawingBuffer: true,
                 featureCollection: () => this.featureCollectionFor(this.mainRegions),
-                onLoaded: () => this.initInsetMaps(),
+                onLoaded: () => {
+                    // rebuildMap() 的共用相機初始值仍是 6.8；預測地圖首次載入也要走一次
+                    // renderCurrentLevel()，才會套用這個模式自己的全國縮放比例。
+                    this.renderCurrentLevel();
+                    this.initInsetMaps();
+                },
             });
         },
 
