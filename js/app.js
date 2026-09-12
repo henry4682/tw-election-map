@@ -786,8 +786,10 @@ const LEAD_SHADE_LABELS = ['微幅領先', '領先', '明顯領先', '大幅領�
  */
 function colorShades(hexColor, count = PARTY_SHADE_COUNT) {
     const { h, s } = rgbToHsl(hexToRgb(hexColor));
-    const minL = 0.24;
-    const maxL = 0.8;
+    // 最深階原本壓到 24% 明度，深藍、深綠、深紅在小色塊與地圖上都容易看成近黑色。
+    // 把可選範圍收斂到 38%～72%，保留四階差異，同時讓不同色相在深色端仍清楚可辨。
+    const minL = 0.38;
+    const maxL = 0.72;
 
     return Array.from({ length: count }, (_, i) => hslToHex(h, s, minL + (maxL - minL) * (i / (count - 1))));
 }
