@@ -976,7 +976,14 @@ header h1 {
     margin: 0.5rem 0;
 }
 
+.party-search {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+}
+
 .add-party-form input[type='text'] {
+    width: 100%;
     flex: 1;
     min-width: 0;
     padding: 0.35rem 0.5rem;
@@ -985,6 +992,40 @@ header h1 {
     color: var(--text);
     border-radius: 4px;
     font-size: 0.85rem;
+}
+
+.party-search-results {
+    position: absolute;
+    z-index: 20;
+    top: calc(100% + 0.2rem);
+    left: 0;
+    right: 0;
+    max-height: 13rem;
+    overflow-y: auto;
+    margin: 0;
+    padding: 0.2rem;
+    list-style: none;
+    border: 1px solid var(--border-strong);
+    border-radius: 4px;
+    background: var(--panel);
+    box-shadow: 0 0.4rem 1rem rgb(15 23 42 / 18%);
+}
+
+.party-search-results button {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    margin: 0;
+    padding: 0.4rem 0.5rem;
+    border: 0;
+    text-align: left;
+}
+
+.party-dot {
+    width: 0.75rem;
+    height: 0.75rem;
+    flex: 0 0 auto;
+    border-radius: 2px;
 }
 
 .add-party-form input[type='color'] {

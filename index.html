@@ -211,7 +211,14 @@
                         </ul>
 
                         <div class="add-party-form">
-                            <input type="text" placeholder="自訂政黨或候選人名稱" aria-label="自訂政黨或候選人名稱" x-model="newPartyLabel" maxlength="20" @keydown.enter="addCustomParty()">
+                            <div class="party-search">
+                                <input type="text" placeholder="搜尋或輸入政黨名稱" aria-label="搜尋或輸入政黨名稱" x-model="newPartyLabel" maxlength="20" @input="queuePartySearch()" @keydown.enter="addCustomParty()">
+                                <ul class="party-search-results" x-show="partySearchResults.length" x-cloak>
+                                    <template x-for="p in partySearchResults" :key="p.party_name">
+                                        <li><button type="button" @click="choosePartySuggestion(p)"><span class="party-dot" :style="`background:${p.color}`"></span><span x-text="p.party_name"></span></button></li>
+                                    </template>
+                                </ul>
+                            </div>
                             <input type="color" x-model="newPartyColor" title="自訂顏色">
                             <button type="button" @click="addCustomParty()">新增</button>
                         </div>
@@ -558,6 +565,6 @@
         </div>
 
     </div>
-    <script src="js/app.js?v=20260912-4"></script>
+    <script src="js/app.js?v=20260912-5"></script>
 </body>
 </html>

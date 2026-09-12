@@ -819,6 +819,7 @@ function votePctOf(result, results) {
 // 原本各自想各寫一份，改成都讀這一份，維護一次。fetch 用同一個 Promise 快取，
 // predictionMap()/drillDownMap() 兩邊的 init() 都會呼叫，只實際打一次網路請求。
 const CURRENT_LY_PARTIES_URL = 'data/current-ly-parties.json';
+const PARTY_DICTIONARY_URL = 'data/party-dictionary.json';
 let currentLyPartiesData = [];
 let currentLyPartyNames = new Set();
 let currentLyPartiesPromise = null;
@@ -852,6 +853,20 @@ function loadCurrentLyParties() {
     }
 
     return currentLyPartiesPromise;
+}
+
+async function loadPartyDictionary() {
+    try {
+        const data = await fetchJsonOrThrow(PARTY_DICTIONARY_URL);
+
+        return Array.isArray(data.parties) ? data.parties : [];
+    } catch (e) {
+        return [];
+    }
+}
+
+function shortPartyName(name) {
+    return name === '無黨籍及未經政黨推薦' ? '無黨籍' : name;
 }
 
 /**
@@ -1097,7 +1112,7 @@ const OTHER_LEGISLATOR_SEAT_COUNTS = {
 // 時都是多餘的）更好掃視。
 const PREDICT_ELECTION_TYPE_LABELS = {
     president: '總統選舉',
-    legislator: '區域立委',
+    legislator: '立委選舉',
     legislator_at_large: '不分區立委',
     legislator_mountain_indigenous: '山地原民立委',
     legislator_plains_indigenous: '平地原民立委',
@@ -1322,6 +1337,9 @@ function predictionMap() {
         customParties: [],
         newPartyLabel: '',
         newPartyColor: '#6b7280',
+        partyDictionary: [],
+        partySearchResults: [],
+        _partySearchTimer: null,
 
         /** 政黨選取清單：現任立院政黨 + 使用者自訂政黨，兩者用同一份清單給塗格子/查詢用。 */
         get assignableParties() {
@@ -1448,7 +1466,8 @@ function predictionMap() {
             const totals = new Map();
 
             for (const { partyName, color, count } of partyLeadCountsFor(this.regionTree, this.candidates)) {
-                totals.set(partyName, { party_name: partyName, color, seats: count });
+                const displayName = shortPartyName(partyName);
+                totals.set(displayName, { party_name: displayName, color, seats: count });
             }
 
             for (const category of this.otherLegislatorCategories) {
@@ -1631,8 +1650,12 @@ function predictionMap() {
             // 直接用 partiesResult.parties 那個模組層級共用陣列——使用者會直接改名字/顏色，
             // 共用陣列被改到會連帶影響其他也讀這份快取的呼叫端。_defaultLyParties 額外存一份
             // 沒被改過的版本，resetToActual() 用它復原。
-            const partiesResult = await loadCurrentLyParties();
-            this.currentLyParties = partiesResult.parties.map((p, i) => ({ ...p, id: `ly-${i}` }));
+            const [partiesResult, partyDictionary] = await Promise.all([
+                loadCurrentLyParties(),
+                loadPartyDictionary(),
+            ]);
+            this.currentLyParties = partiesResult.parties.map((p, i) => ({ ...p, party_name: shortPartyName(p.party_name), id: `ly-${i}` }));
+            this.partyDictionary = partyDictionary.map((p) => ({ ...p, party_name: shortPartyName(p.party_name) }));
             this._defaultLyParties = this.currentLyParties.map((p) => ({ ...p }));
             this.loadCustomPartiesFromStorage();
 
@@ -1708,6 +1731,22 @@ function predictionMap() {
             }
         },
 
+        queuePartySearch() {
+            clearTimeout(this._partySearchTimer);
+            this._partySearchTimer = setTimeout(() => {
+                const query = this.newPartyLabel.trim().toLocaleLowerCase('zh-TW');
+                this.partySearchResults = query
+                    ? this.partyDictionary.filter((p) => p.party_name.toLocaleLowerCase('zh-TW').includes(query)).slice(0, 8)
+                    : [];
+            }, 250);
+        },
+
+        choosePartySuggestion(party) {
+            this.newPartyLabel = party.party_name;
+            this.newPartyColor = isValidHexColor(party.color) ? party.color : FALLBACK_CANDIDATE_COLOR;
+            this.partySearchResults = [];
+        },
+
         addCustomParty() {
             const label = this.newPartyLabel.trim();
 
@@ -1718,6 +1757,7 @@ function predictionMap() {
             this.customParties.push({ party_name: label, color });
             this.persistCustomParties();
             this.newPartyLabel = '';
+            this.partySearchResults = [];
         },
 
         removeCustomParty(index) {
