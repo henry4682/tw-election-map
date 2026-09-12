@@ -767,20 +767,29 @@ function hslToHex(h, s, l) {
  * 色相的「淺版」而不是「趨近灰白」，各政黨之間即使在領先幅度小的行政區也維持可辨識的色相
  * 差異。
  */
+const PARTY_SHADE_COUNT = 4;
+
+// cyclePartyLeadShade() 用：每一階深淺配一個中文標籤，跟 270toWin 那種選舉地圖
+// Safe/Likely/Lean 分級是同一個概念——固定幾個有意義的名字，不是純數字深淺，選區明細
+// 面板（見 index.html）顯示「目前指定哪一階」時用得到。索引對應 colorShades() 由淺到深
+// 的順序，長度要跟 PARTY_SHADE_COUNT 一致。
+const LEAD_SHADE_LABELS = ['微幅領先', '領先', '明顯領先', '大幅領先'];
+
 /**
- * duplicatePartyShade() 用：固定色相/飽和度，明度往還沒被佔滿的方向位移一階（太亮就往暗
- * 移，太暗就往亮移，不會一直朝同一個方向衝到變白/變黑看不出顏色），跟 shareToFillColor()
- * 「只調明度、保留色相」是同一個原則，只是那個是連續依得票率調，這個是每次複製固定跳一階。
+ * duplicatePartyWithColor() 用：固定色相/飽和度，明度平均攤開成幾種深淺讓使用者直接挑，
+ * 不用像原本 nextShadeColor() 那樣每點一次複製才看得到下一階是什麼顏色——一次列出來，
+ * 猜同一個政黨要拆成幾個候選人時可以直接比較著選，不用「複製→看不滿意→移除→再複製」
+ * 反覆試。跟 shareToFillColor()「只調明度、保留色相」是同一個原則。
+ * @param {string} hexColor
+ * @param {number} [count]
+ * @returns {string[]}
  */
-function nextShadeColor(hexColor) {
-    const { h, s, l } = rgbToHsl(hexToRgb(hexColor));
-    const step = 0.14;
-    const minL = 0.16;
-    const maxL = 0.84;
+function colorShades(hexColor, count = PARTY_SHADE_COUNT) {
+    const { h, s } = rgbToHsl(hexToRgb(hexColor));
+    const minL = 0.24;
+    const maxL = 0.8;
 
-    const nextL = l + step > maxL ? Math.max(minL, l - step) : l + step;
-
-    return hslToHex(h, s, Math.min(maxL, Math.max(minL, nextL)));
+    return Array.from({ length: count }, (_, i) => hslToHex(h, s, minL + (maxL - minL) * (i / (count - 1))));
 }
 
 function shareToFillColor(hexColor, share) {
@@ -1320,14 +1329,19 @@ function predictionMap() {
             return [...this.currentLyParties, ...this.customParties];
         },
 
+        /** 見 index.html：每一列政黨旁邊列出的深淺選項，直接點喜歡的那個複製，不用一直點同一顆按鈕猜下一階是什麼顏色。 */
+        colorShades(hexColor) {
+            return colorShades(hexColor);
+        },
+
         /**
-         * 「複製一份、換個深淺」：同一個政黨底下想拆成好幾個候選人時，不用每次手動調色，
-         * 固定色相/飽和度只把明度往還沒被佔滿的方向位移一階，多次複製會在同一色系裡逐漸
-         * 展開幾種深淺；使用者對顏色不滿意還是可以自己用色盤調。新項目名稱加一個沒被佔用
-         * 的編號後綴，避免撞名——assignableParties 好幾個地方靠 party_name 當識別
-         * （selectParty()/paintOtherLegislatorSeat() 等），撞名會讓查詢查到錯的那筆。
+         * 複製一份、套用選好的深淺：同一個政黨底下想拆成好幾個候選人時，不用每次手動調色，
+         * 直接點 colorShades() 列出來的其中一個深淺；使用者對顏色不滿意還是可以自己用色盤
+         * 調。新項目名稱加一個沒被佔用的編號後綴，避免撞名——assignableParties 好幾個地方
+         * 靠 party_name 當識別（selectParty()/paintOtherLegislatorSeat() 等），撞名會讓
+         * 查詢查到錯的那筆。
          */
-        duplicatePartyShade(party, list = this.currentLyParties) {
+        duplicatePartyWithColor(party, color, list = this.currentLyParties) {
             const index = list.indexOf(party);
 
             if (index === -1) return;
@@ -1345,7 +1359,7 @@ function predictionMap() {
             list.splice(index + 1, 0, {
                 id: `${party.id ?? baseName}-dup-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
                 party_name: `${baseName} ${n}`,
-                color: nextShadeColor(party.color),
+                color,
             });
 
             if (list === this.customParties) this.persistCustomParties();
@@ -1444,6 +1458,77 @@ function predictionMap() {
             }
 
             return [...totals.values()].sort((a, b) => b.seats - a.seats);
+        },
+
+        /**
+         * 右側總覽共用的統計資料。立委以「區域席次＋三類席次格」計算；其他選舉則以目前
+         * 填色層級的預測贏家計算。這裡直接讀現有預測狀態，因此每次塗地圖或席次格後，
+         * Alpine 會同步重算圓環、排名與比例帶。
+         */
+        get predictionSummaryEntries() {
+            let entries;
+
+            if (this.election?.type === 'legislator') {
+                entries = this.totalLegislatorSeatsByParty.map((entry) => ({
+                    party_name: entry.party_name,
+                    color: isValidHexColor(entry.color) ? entry.color : FALLBACK_CANDIDATE_COLOR,
+                    count: entry.seats,
+                }));
+            } else {
+                const totals = new Map();
+
+                for (const node of this.allFillNodes) {
+                    const candidacyId = node.assigned_candidacy_id ?? node.actual_winner_candidacy_id;
+                    const partyName = node.assigned_party?.party_name
+                        ?? partyNameFrom(this.candidates, candidacyId)
+                        ?? candidateLabelFrom(this.candidates, candidacyId);
+                    const candidateColor = node.assigned_party?.color
+                        ?? candidateColorFrom(this.candidates, candidacyId);
+                    const color = isValidHexColor(candidateColor) ? candidateColor : FALLBACK_CANDIDATE_COLOR;
+                    const existing = totals.get(partyName);
+
+                    if (existing) existing.count += 1;
+                    else totals.set(partyName, { party_name: partyName, color, count: 1 });
+                }
+
+                entries = [...totals.values()].sort((a, b) => b.count - a.count);
+            }
+
+            const total = entries.reduce((sum, entry) => sum + entry.count, 0);
+
+            return entries.map((entry) => ({
+                ...entry,
+                percentage: total ? (entry.count / total) * 100 : 0,
+            }));
+        },
+
+        get predictionSummaryTotal() {
+            return this.predictionSummaryEntries.reduce((sum, entry) => sum + entry.count, 0);
+        },
+
+        /** CSS conic-gradient 避免再引入圖表套件，也不把外部名稱寫進 SVG/HTML。 */
+        get predictionDonutStyle() {
+            const entries = this.predictionSummaryEntries;
+
+            if (! entries.length) return `background:${FALLBACK_CANDIDATE_COLOR}`;
+
+            let cursor = 0;
+            const stops = entries.map((entry) => {
+                const start = cursor;
+                cursor += entry.percentage;
+                return `${entry.color} ${start.toFixed(2)}% ${cursor.toFixed(2)}%`;
+            });
+
+            return `background:conic-gradient(${stops.join(',')})`;
+        },
+
+        get predictionDonutLabel() {
+            const unit = this.election?.type === 'legislator' ? '席' : `個${this.fillLevelLabel}`;
+            const breakdown = this.predictionSummaryEntries
+                .map((entry) => `${entry.party_name} ${entry.count} ${unit}`)
+                .join('，');
+
+            return `預測分布：${breakdown || '尚無資料'}`;
         },
 
         /**
@@ -1948,7 +2033,13 @@ function predictionMap() {
          * 使用者只是想看某個行政區目前的明細（尤其是鍵盤清單，focus 移過去就想看數字），
          * 卻會不小心把猜測改掉。改成：還沒選取這個行政區的第一次點擊只選取/顯示明細，不動
          * 猜測；已經選取（畫面上明細面板顯示的就是這個行政區）的情況下再點一次，才視為
-         * 使用者確認要編輯，這時才循環候選人並記一筆 lastEdit 供 undoLastEdit() 復原。
+         * 使用者確認要編輯。
+         *
+         * 「拿畫筆直接塗」：上面這套 UX-01 節奏是給「先看明細再決定」的情境；但選好
+         * activePartyName 這支畫筆之後，使用者要的是跟塗立委席次格子一樣直接塗，不想先點
+         * 一次選取、確認明細、再點第二次才真的上色——見 paintRegionWithActiveParty()，
+         * 有畫筆時直接跳過 UX-01 那兩步，點一下就塗，同一格再點是切換深淺（跟其他還沒被
+         * 這支畫筆塗過的行政區共用同一個判斷）。
          */
         selectRegionById(regionId) {
             const region = this.currentRegions.find((r) => r.region_id === regionId);
@@ -1965,8 +2056,18 @@ function predictionMap() {
                 return;
             }
 
+            if (this.activePartyName) {
+                this.paintRegionWithActiveParty(region);
+                return;
+            }
+
             if (this.selectedRegion?.region_id !== regionId) {
                 this.selectedRegion = region;
+                return;
+            }
+
+            if (region.assigned_party) {
+                this.cyclePartyLeadShade(region);
                 return;
             }
 
@@ -1985,6 +2086,52 @@ function predictionMap() {
             region.assigned_party = null;
 
             this.renderCurrentLevel();
+        },
+
+        /**
+         * 見 selectRegionById() 註解：政黨/候選人已經填好了，再點一次改成在 colorShades()
+         * 算出來的幾階深淺裡循環（跟「選一個政黨」清單旁邊那排深淺色塊是同一組函式）。額外
+         * 存一個 leadIndex（見 LEAD_SHADE_LABELS），不是靠 indexOf(color) 反查目前在哪一階
+         * ——hex 色碼經過 hexToRgb→rgbToHsl→hslToHex 來回轉換可能有浮點數捨入誤差，反查
+         * 容易找不到剛好相等的字串；剛從側欄指定、還沒被循環過的情況本來就沒有 leadIndex，
+         * 一樣當作「從最淺的那一階開始」处理，不會噴錯。
+         */
+        cyclePartyLeadShade(region) {
+            const shades = colorShades(region.assigned_party.color);
+            const currentIndex = region.assigned_party.leadIndex ?? -1;
+            const nextIndex = (currentIndex + 1) % shades.length;
+
+            region.assigned_party = { ...region.assigned_party, color: shades[nextIndex], leadIndex: nextIndex };
+            this.renderCurrentLevel();
+        },
+
+        /**
+         * 見 selectRegionById() 「拿畫筆直接塗」註解：activePartyName 有值時，點地圖不用
+         * 先選取查看明細，直接當畫筆塗——這個行政區還沒被指定成目前這支畫筆的政黨就塗上去
+         * （蓋掉原本不管是真實候選人還是別的政黨指定，「最後做的動作為準」跟其他指定路徑
+         * 一致）；已經是同一支畫筆塗過的，視為使用者想調整領先幅度，改成循環深淺
+         * （cyclePartyLeadShade()），不會塗一次就換回最淺那階。
+         */
+        paintRegionWithActiveParty(region) {
+            const brush = this.assignableParties.find((p) => p.party_name === this.activePartyName);
+
+            if (! brush) return;
+
+            this.selectedRegion = region;
+
+            if (region.assigned_party?.party_name === brush.party_name) {
+                this.cyclePartyLeadShade(region);
+                return;
+            }
+
+            this.lastEdit = null;
+            region.assigned_party = { party_name: brush.party_name, color: brush.color };
+            this.renderCurrentLevel();
+        },
+
+        /** 見 index.html 明細面板：這個行政區目前指定的政黨在哪一階深淺，沒指定過就回傳 null。 */
+        partyLeadShadeLabel(region) {
+            return LEAD_SHADE_LABELS[region?.assigned_party?.leadIndex] ?? null;
         },
 
         /** UX-01 單步復原：只還原 lastEdit 記的那一次候選人循環，不是完整編輯歷史。 */

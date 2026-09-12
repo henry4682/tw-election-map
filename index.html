@@ -106,18 +106,55 @@
                 </nav>
             </div>
 
-            <div class="layout" x-show="status === 'ready'" x-cloak>
+            <div class="layout prediction-layout" x-show="status === 'ready'" x-cloak>
                 <div id="map" class="map-pane"></div>
 
-                <aside class="sidebar-pane">
+                <aside class="sidebar-pane prediction-sidebar">
+                    <section class="prediction-overview" aria-labelledby="prediction-overview-title">
+                        <div class="prediction-overview-heading">
+                            <div>
+                                <p class="eyebrow">即時預測</p>
+                                <h2 id="prediction-overview-title" x-text="election?.name"></h2>
+                            </div>
+                            <strong class="prediction-total mono" x-text="`${predictionSummaryTotal} ${election?.type === 'legislator' ? '席' : `個${fillLevelLabel}`}`"></strong>
+                        </div>
+
+                        <div class="prediction-donut-wrap">
+                            <div class="prediction-donut" :style="predictionDonutStyle" role="img" :aria-label="predictionDonutLabel">
+                                <div class="prediction-donut-hole">
+                                    <strong class="mono" x-text="predictionSummaryTotal"></strong>
+                                    <span x-text="election?.type === 'legislator' ? '總席次' : `個${fillLevelLabel}`"></span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="prediction-share-bar" aria-hidden="true">
+                            <template x-for="entry in predictionSummaryEntries" :key="entry.party_name">
+                                <span :style="`width:${entry.percentage}%;background:${entry.color}`"></span>
+                            </template>
+                        </div>
+
+                        <ol class="prediction-ranking">
+                            <template x-for="entry in predictionSummaryEntries" :key="entry.party_name">
+                                <li>
+                                    <span class="swatch" :style="`background:${entry.color}`"></span>
+                                    <span class="prediction-party-name" x-text="entry.party_name"></span>
+                                    <strong class="mono" x-text="entry.count"></strong>
+                                    <span class="prediction-percentage mono" x-text="`${entry.percentage.toFixed(1)}%`"></span>
+                                </li>
+                            </template>
+                        </ol>
+                        <p class="hint" x-show="election?.type === 'legislator'" x-cloak>總席次包含區域立委，以及下方已填色的不分區、平地與山地原住民立委。</p>
+                    </section>
+
                     <section>
                         <h2>點<span x-text="fillLevelLabel"></span>切換預測候選人</h2>
-                        <p class="hint">先點一下查看明細，再點一次切換候選人；顏色深淺代表得票率</p>
+                        <p class="hint">沒選政黨當畫筆時：先點一下查看明細，再點一次切換候選人；顏色深淺代表得票率。選了政黨當畫筆時：點<span x-text="fillLevelLabel"></span>直接塗上去，同一個再點一次切換領先深淺</p>
                     </section>
 
                     <section>
                         <h2>選一個政黨</h2>
-                        <p class="hint">名稱、顏色都可以直接改——改成候選人的名字，這裡就變成「選一個人」；點「套用」反白選取：有選取<span x-text="fillLevelLabel"></span>就直接指定給它<span x-show="election?.type === 'legislator'" x-cloak>，也可以當畫筆塗下面的格子</span>。⧉ 是複製一份、自動換個深淺，方便同一個政黨拆成好幾個候選人</p>
+                        <p class="hint">名稱、顏色都可以直接改——改成候選人的名字，這裡就變成「選一個人」；點「套用」拿畫筆：反白後直接去地圖上點<span x-text="fillLevelLabel"></span>塗色<span x-show="election?.type === 'legislator'" x-cloak>，也可以拿去塗下面的格子</span>；有選取<span x-text="fillLevelLabel"></span>時點「套用」則是直接指定給它。右邊幾個小色塊是同色系不同深淺，點一個就複製一份候選人，方便同一個政黨拆成好幾人</p>
                         <ul class="legend party-edit-list" x-show="currentLyParties.length" x-cloak>
                             <template x-for="p in currentLyParties" :key="p.id">
                                 <li class="party-pick-row" :class="{ active: activePartyName === p.party_name }">
@@ -127,7 +164,17 @@
                                         <strong x-text="partyTally[p.party_name] ?? 0"></strong>
                                         <span x-text="`個${fillLevelLabel}`"></span>
                                     </button>
-                                    <button type="button" class="party-duplicate" title="複製一份、換個深淺" @click="duplicatePartyShade(p)">⧉</button>
+                                    <span class="shade-picker">
+                                        <template x-for="shade in colorShades(p.color)" :key="shade">
+                                            <button
+                                                type="button"
+                                                class="shade-swatch"
+                                                :style="`background:${shade}`"
+                                                title="複製一份候選人，用這個深淺"
+                                                @click="duplicatePartyWithColor(p, shade)"
+                                            ></button>
+                                        </template>
+                                    </span>
                                     <button type="button" class="remove-party" @click="removeCurrentLyParty(p)">移除</button>
                                 </li>
                             </template>
@@ -147,7 +194,17 @@
                                         <strong x-text="partyTally[p.party_name] ?? 0"></strong>
                                         <span x-text="`個${fillLevelLabel}`"></span>
                                     </button>
-                                    <button type="button" class="party-duplicate" title="複製一份、換個深淺" @click="duplicatePartyShade(p, customParties)">⧉</button>
+                                    <span class="shade-picker">
+                                        <template x-for="shade in colorShades(p.color)" :key="shade">
+                                            <button
+                                                type="button"
+                                                class="shade-swatch"
+                                                :style="`background:${shade}`"
+                                                title="複製一份候選人，用這個深淺"
+                                                @click="duplicatePartyWithColor(p, shade, customParties)"
+                                            ></button>
+                                        </template>
+                                    </span>
                                     <button type="button" class="remove-party" @click="removeCustomParty(i)">移除</button>
                                 </li>
                             </template>
@@ -197,6 +254,12 @@
                             <h2 x-text="selectedRegion?.name"></h2>
                             <button type="button" class="panel-close" @click="closeDetail()">關閉</button>
                         </div>
+                        <p class="hint" x-show="selectedRegion?.assigned_party" x-cloak>
+                            目前指定：
+                            <span class="swatch" :style="`background:${selectedRegion?.assigned_party?.color}`"></span>
+                            <span x-text="selectedRegion?.assigned_party?.party_name"></span>
+                            <span x-show="partyLeadShadeLabel(selectedRegion)" x-cloak>· <span x-text="partyLeadShadeLabel(selectedRegion)"></span>（再點地圖切換深淺）</span>
+                        </p>
                         <svg viewBox="0 0 120 120" width="120" height="120" class="pie-chart" x-html="pieChartSvg(selectedRegion)"></svg>
                         <ul>
                             <template x-for="r in selectedRegion?.results ?? []" :key="r.candidacy_id">
