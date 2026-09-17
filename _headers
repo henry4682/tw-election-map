@@ -1,0 +1,22 @@
+# Cloudflare Pages 的 header 規則檔（放在部署根目錄，Cloudflare 會自動讀取，不需要
+# 額外設定）。Cloudflare Pages 本身已經對所有靜態資產做 Brotli 壓縮跟邊緣快取，且每次
+# 部署都會正確清掉舊快取（見 https://developers.cloudflare.com/pages/configuration/serving-pages/），
+# 所以這裡只需要針對「同一個路徑、內容會改變」的資料檔額外指定 Cache-Control，其餘檔案
+# 交給平台預設值即可，不用整份重寫一次。
+#
+# election-*.json 這類單場選舉資料檔用 content_hash 當 query string 版本號
+# （見 js/app.js 的 withVersion()／各 election:export-* 指令的 rebuildIndex()），
+# 資料一改版本號就變、URL 也跟著變，等同自動失效——可以放心設一年的 immutable 長效快取，
+# 不用擔心使用者拿到舊資料。
+
+/data/election-*
+  Cache-Control: public, max-age=31536000, immutable
+
+# index 檔案（elections-index.json／drilldown-index.json 等）本身沒有版本化機制，
+# 每次後端重新匯出都可能改變內容（新增選舉、content_hash 更新），且檔案很小、
+# 頻繁重新驗證的成本可忽略——用短快取即可，不要跟著上面的資料檔一樣長效。
+/data/*-index.json
+  Cache-Control: public, max-age=300
+
+/data/current-ly-parties.json
+  Cache-Control: public, max-age=300
