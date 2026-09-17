@@ -1099,6 +1099,16 @@ button:hover {
         min-height: 100vh;
     }
 
+    /* header 是 position: fixed 浮動在畫面右上角，不佔文件流版位——窄螢幕下 .view 的
+       第一個區塊（各模式自己的 toolbar/election-sidebar-header）原本從 y=0 開始排版，
+       跟浮動 header 疊在一起，導致選舉清單收合按鈕（.sidebar-toggle）跟 header 裡的
+       GitHub 連結圖示重疊，手機上點「展開選舉清單」常常誤點成跳轉到 GitHub。這裡幫
+       .view 保留跟 header 實際渲染高度相當的頂部留白，讓內容從 header 底下開始，兩者
+       不再互相疊到。 */
+    .view {
+        padding-top: 3.5rem;
+    }
+
     header {
         top: 0.4rem;
         right: 0.4rem;
