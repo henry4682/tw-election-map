@@ -2964,6 +2964,9 @@ function districtMap() {
         insetMaps: [],
         election: null,
         districts: [],
+        // 平地/山地原住民議員席次（election:export-district-map-data 的 indigenous_seats）：
+        // 選區範圍是全縣市、跟一般選區地理重疊，畫不成多邊形，只用席次方塊顯示。
+        indigenousSeats: [],
         // 見 predictionMap() 同一個欄位的註解。
         geometryStore: null,
         hoveredDistrict: null,
@@ -2985,20 +2988,51 @@ function districtMap() {
 
         get partyTotals() {
             const totals = {};
+            const add = (partyName, color) => {
+                const key = partyName ?? '其他';
+
+                if (! totals[key]) {
+                    totals[key] = { party_name: key, seats: 0, color };
+                }
+
+                totals[key].seats += 1;
+            };
 
             for (const district of this.districts) {
                 for (const p of district.party_seats) {
-                    const key = p.party_name ?? '其他';
-
-                    if (! totals[key]) {
-                        totals[key] = { party_name: key, seats: 0, color: p.color };
-                    }
-
-                    totals[key].seats += p.seats;
+                    for (let i = 0; i < p.seats; i++) add(p.party_name, p.color);
                 }
             }
 
+            for (const group of this.indigenousSeats) {
+                for (const seat of group.seats) add(seat.party_name, seat.color);
+            }
+
             return Object.values(totals).sort((a, b) => b.seats - a.seats);
+        },
+
+        /** 原住民議席依縣市分組，每個縣市底下是平地/山地各選區的席次方塊。 */
+        get indigenousSeatGroups() {
+            const byCounty = new Map();
+
+            for (const group of this.indigenousSeats) {
+                if (! byCounty.has(group.county)) byCounty.set(group.county, []);
+                byCounty.get(group.county).push(group);
+            }
+
+            return [...byCounty].map(([county, groups]) => ({
+                county,
+                total: groups.reduce((sum, g) => sum + g.seats.length, 0),
+                groups,
+            }));
+        },
+
+        indigenousKindLabel(kind) {
+            return kind === 'plains' ? '平地原住民' : '山地原住民';
+        },
+
+        seatColor(color) {
+            return isValidHexColor(color) ? color : FALLBACK_CANDIDATE_COLOR;
         },
 
         async init() {
@@ -3062,6 +3096,7 @@ function districtMap() {
 
             this.election = data.election;
             this.districts = data.districts;
+            this.indigenousSeats = data.indigenous_seats ?? [];
             this.status = 'ready';
 
             rebuildMap(this, {

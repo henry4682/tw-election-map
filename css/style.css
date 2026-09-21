@@ -1270,3 +1270,30 @@ button:hover {
         font-size: 0.78rem;
     }
 }
+.indigenous-seat-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.indigenous-seat-list > li {
+    margin-bottom: 0.6rem;
+}
+
+.indigenous-seat-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem;
+    margin-top: 0.25rem;
+}
+
+.indigenous-seat-kind {
+    min-width: 5.5em;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.indigenous-seat {
+    cursor: default;
+}

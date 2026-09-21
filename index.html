@@ -9,7 +9,7 @@
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🗳️</text></svg>">
     <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css"
         integrity="sha384-MinO0mNliZ3vwppuPOUnGa+iq619pfMhLVUXfC4LHwSCvF9H+6P/KO4Q7qBOYV5V" crossorigin="anonymous">
-    <link rel="stylesheet" href="css/style.css?v=20260912-1">
+    <link rel="stylesheet" href="css/style.css?v=20260921-1">
     <script defer src="https://unpkg.com/alpinejs@3.17.2/dist/cdn.min.js"
         integrity="sha384-lcaMFHdvRVsEXVuhit4fTnbxq6eTLm5HPdNzO7vXNZjr8HOCMouPmv4hSGF3PCJV" crossorigin="anonymous"></script>
     <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"
@@ -529,6 +529,33 @@
                         </details>
                     </section>
 
+                    <section x-show="indigenousSeatGroups.length" x-cloak>
+                        <h2>原住民議席</h2>
+                        <p class="hint">平地／山地原住民議員由全縣市原住民另外選出，範圍與一般選區重疊，不畫在地圖上；每個方塊是一席，顏色是當選人政黨（已計入上方全國席次）。</p>
+                        <ul class="indigenous-seat-list">
+                            <template x-for="g in indigenousSeatGroups" :key="g.county">
+                                <li>
+                                    <strong x-text="g.county"></strong>
+                                    <span class="pct" x-text="`${g.total} 席`"></span>
+                                    <template x-for="grp in g.groups" :key="grp.district_id">
+                                        <div class="indigenous-seat-row">
+                                            <span class="indigenous-seat-kind" x-text="indigenousKindLabel(grp.kind)"></span>
+                                            <template x-for="seat in grp.seats" :key="seat.candidacy_id">
+                                                <span
+                                                    class="seat-square indigenous-seat"
+                                                    :style="`background:${seatColor(seat.color)}`"
+                                                    :title="`${grp.name}：${seat.label}（${seat.votes.toLocaleString()} 票）`"
+                                                    role="img"
+                                                    :aria-label="`${grp.name}：${seat.label}`"
+                                                ></span>
+                                            </template>
+                                        </div>
+                                    </template>
+                                </li>
+                            </template>
+                        </ul>
+                    </section>
+
                     <section x-show="selectedDistrict" x-cloak>
                         <div class="panel-heading">
                             <h2 x-text="selectedDistrict?.name"></h2>
@@ -568,6 +595,6 @@
         </div>
 
     </div>
-    <script src="js/app.js?v=20260912-7"></script>
+    <script src="js/app.js?v=20260921-1"></script>
 </body>
 </html>
